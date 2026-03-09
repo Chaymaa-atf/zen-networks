@@ -1,0 +1,20 @@
+modules:
+  jira:globalPage:
+    - key: gestion-test-global-page
+      title: Gestion Test
+      icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      function: main-function
+      route: gestion-test
+
+  function:
+    - key: main-function
+      handler: frontend/index.handler
+
+app:
+  id: ari:cloud:ecosystem::app/35bc0dd3-b8f7-40c4-a80d-32754e2ac778
+  runtime:
+    name: nodejs20.x
+
+permissions:
+  scopes:
+    - read:jira-work
