@@ -1,21 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { invoke } from '@forge/bridge';
+import Resolver from '@forge/resolver';
 
-const App = () => {
-  const [message, setMessage] = useState("Chargement...");
+const resolver = new Resolver();
 
-  useEffect(() => {
-    invoke('getMessage')
-      .then((data) => setMessage(data.message))
-      .catch(() => setMessage("Erreur lors du chargement"));
-  }, []);
+resolver.define('getMessage', async () => {
+  return { message: 'Hello World !' };
+});
 
-  return (
-    <div style={{ padding: '16px' }}>
-      <h1>Forge fonctionne 🚀</h1>
-      <p>{message}</p>
-    </div>
-  );
-};
-
-export default App;
+export const handler = resolver.getDefinitions();

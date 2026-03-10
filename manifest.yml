@@ -3,12 +3,19 @@ modules:
     - key: gestion-test-global-page
       title: Gestion Test
       icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
-      function: main-function
+      resource: main
+      render: native
+      resolver:
+        function: resolver
       route: gestion-test
 
   function:
-    - key: main-function
-      handler: frontend/index.handler
+    - key: resolver
+      handler: index.handler
+
+resources:
+  - key: main
+    path: src/frontend/index.jsx
 
 app:
   id: ari:cloud:ecosystem::app/35bc0dd3-b8f7-40c4-a80d-32754e2ac778
