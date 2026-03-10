@@ -1,7 +1,7 @@
 modules:
   jira:globalPage:
     - key: gestion-test-global-page
-      title: Gestion Test
+      title: Gestion Missions
       icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       resource: main
       render: native
