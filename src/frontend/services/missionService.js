@@ -7,3 +7,15 @@ export const createMission = async (data) => {
 export const getMissions = async () => {
   return await invoke('getMissions');
 };
+
+export const getMissionById = async (missionId) => {
+  return await invoke('getMissionById', { missionId });
+};
+
+export const updateMissionStatus = async (missionId, statut) => {
+  return await invoke('updateMissionStatus', { missionId, statut });
+};
+
+export const deleteMission = async (missionId) => {
+  return await invoke('deleteMission', { missionId });
+};

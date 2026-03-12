@@ -1,19 +1,34 @@
 import React from 'react';
-import { Box, Stack, Text } from '@forge/react';
+import { Box, Button, Stack, Text } from '@forge/react';
 
-const MissionItem = ({ mission }) => {
+const MissionItem = ({ mission, onViewDetails }) => {
   return (
-    <Box>
-      <Stack space="space.050">
-        <Text>Titre : {mission.titre}</Text>
-        <Text>Destination : {mission.destination}</Text>
-        <Text>Pays : {mission.pays}</Text>
-        <Text>Ville : {mission.ville}</Text>
-        <Text>Date départ : {mission.dateDepart}</Text>
-        <Text>Date retour : {mission.dateRetour}</Text>
-        <Text>Motif : {mission.motif}</Text>
+    <Box
+      xcss={{
+        border: '1px solid',
+        borderColor: 'color.border',
+        borderRadius: 'border.radius.200',
+        padding: 'space.200',
+        backgroundColor: 'elevation.surface',
+      }}
+    >
+      <Stack space="space.100">
+        <Button
+          appearance="subtle"
+          onClick={() => onViewDetails(mission.id)}
+        >
+          {mission.titre}
+        </Button>
+
+        <Text>
+          {mission.ville}, {mission.pays}
+        </Text>
+
+        <Text>
+          {mission.dateDepart} → {mission.dateRetour}
+        </Text>
+
         <Text>Statut : {mission.statut}</Text>
-        <Text>--------------------------</Text>
       </Stack>
     </Box>
   );

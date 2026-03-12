@@ -84,4 +84,88 @@ resolver.define('getMissions', async () => {
   }
 });
 
+resolver.define('getMissionById', async ({ payload }) => {
+  try {
+    const { missionId } = payload;
+
+    const mission = await storage.get(missionId);
+
+    if (!mission) {
+      return {
+        success: false,
+        message: 'Mission introuvable.'
+      };
+    }
+
+    return {
+      success: true,
+      mission
+    };
+  } catch (error) {
+    console.error('Erreur backend getMissionById:', error);
+    return {
+      success: false,
+      message: `Erreur backend: ${error.message}`
+    };
+  }
+});
+
+resolver.define('updateMissionStatus', async ({ payload }) => {
+  try {
+    const { missionId, statut } = payload;
+
+    const mission = await storage.get(missionId);
+
+    if (!mission) {
+      return {
+        success: false,
+        message: 'Mission introuvable.'
+      };
+    }
+
+    mission.statut = statut;
+
+    await storage.set(missionId, mission);
+
+    return {
+      success: true,
+      message: 'Statut mis à jour avec succès.'
+    };
+  } catch (error) {
+    console.error('Erreur backend updateMissionStatus:', error);
+    return {
+      success: false,
+      message: `Erreur backend: ${error.message}`
+    };
+  }
+});
+
+resolver.define('deleteMission', async ({ payload }) => {
+  try {
+    const { missionId } = payload;
+
+    const mission = await storage.get(missionId);
+
+    if (!mission) {
+      return {
+        success: false,
+        message: 'Mission introuvable.'
+      };
+    }
+
+    await storage.delete(missionId);
+
+    return {
+      success: true,
+      message: 'Mission supprimée avec succès.'
+    };
+  } catch (error) {
+    console.error('Erreur backend deleteMission:', error);
+    return {
+      success: false,
+      message: `Erreur backend: ${error.message}`
+    };
+  }
+});
+
 export const handler = resolver.getDefinitions();
