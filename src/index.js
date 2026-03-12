@@ -278,5 +278,48 @@ resolver.define('deleteMission', async ({ payload }) => {
     };
   }
 });
+resolver.define('getMissionAttachments', async ({ payload }) => {
+  try {
+    const { issueKey } = payload;
+
+    if (!issueKey) {
+      return {
+        success: false,
+        message: 'issueKey manquant.'
+      };
+    }
+
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/issue/${issueKey}?fields=attachment`,
+      {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        success: false,
+        message: `Impossible de récupérer les pièces jointes: ${errorText}`
+      };
+    }
+
+    const data = await response.json();
+
+    return {
+      success: true,
+      attachments: data.fields?.attachment || []
+    };
+  } catch (error) {
+    console.error('Erreur backend getMissionAttachments:', error);
+    return {
+      success: false,
+      message: `Erreur backend: ${error.message}`
+    };
+  }
+});
 
 export const handler = resolver.getDefinitions();

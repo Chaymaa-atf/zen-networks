@@ -19,3 +19,7 @@ export const updateMissionStatus = async (missionId, statut) => {
 export const deleteMission = async (missionId) => {
   return await invoke('deleteMission', { missionId });
 };
+
+export const getMissionAttachments = async (issueKey) => {
+  return await invoke('getMissionAttachments', { issueKey });
+};
