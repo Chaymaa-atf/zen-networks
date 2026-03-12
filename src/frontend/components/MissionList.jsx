@@ -1,6 +1,5 @@
 import React from 'react';
-import { Box, Heading, Inline, Stack, Text } from '@forge/react';
-import MissionItem from './MissionItem';
+import { Box, Button, Heading, Inline, Stack, Text } from '@forge/react';
 
 const MissionList = ({ missions, loading, onViewDetails }) => {
   if (loading) {
@@ -16,16 +15,35 @@ const MissionList = ({ missions, loading, onViewDetails }) => {
       <Stack space="space.200">
         <Heading size="medium">Liste des missions</Heading>
 
-        <Inline space="space.200" shouldWrap>
-          {missions.map((mission) => (
-            <Box key={mission.id} xcss={{ width: '320px' }}>
-              <MissionItem
-                mission={mission}
-                onViewDetails={onViewDetails}
-              />
-            </Box>
-          ))}
-        </Inline>
+        <Box>
+          <Stack space="space.150">
+            <Inline spread="space-between" alignBlock="center">
+              <Text>Titre de mission</Text>
+              <Text>Action</Text>
+            </Inline>
+
+            <Text>────────────────────────────────────</Text>
+
+            {missions.map((mission) => (
+              <Box key={mission.id}>
+                <Stack space="space.100">
+                  <Inline spread="space-between" alignBlock="center">
+                    <Text>{mission.titre}</Text>
+
+                    <Button
+                      appearance="subtle"
+                      onClick={() => onViewDetails(mission.id)}
+                    >
+                      Détails
+                    </Button>
+                  </Inline>
+
+                  <Text>────────────────────────────────────</Text>
+                </Stack>
+              </Box>
+            ))}
+          </Stack>
+        </Box>
       </Stack>
     </Box>
   );

@@ -4,8 +4,8 @@ export const createMission = async (data) => {
   return await invoke('createMission', data);
 };
 
-export const getMissions = async () => {
-  return await invoke('getMissions');
+export const getMissions = async (userId) => {
+  return await invoke('getMissions', { userId });
 };
 
 export const getMissionById = async (missionId) => {

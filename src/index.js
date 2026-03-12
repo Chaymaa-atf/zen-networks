@@ -1,7 +1,23 @@
 import Resolver from '@forge/resolver';
-import { storage, startsWith } from '@forge/api';
+import api, { route, storage, startsWith } from '@forge/api';
 
 const resolver = new Resolver();
+
+const ADMIN_IDS = ['ID_ADMIN_1'];
+
+// À adapter
+const PROJECT_KEY = 'FOR';
+const ISSUE_TYPE_NAME = 'Task';
+
+const toAdfParagraph = (text) => ({
+  type: 'paragraph',
+  content: [
+    {
+      type: 'text',
+      text
+    }
+  ]
+});
 
 resolver.define('createMission', async ({ payload }) => {
   try {
@@ -12,10 +28,21 @@ resolver.define('createMission', async ({ payload }) => {
       ville,
       dateDepart,
       dateRetour,
-      motif
+      motif,
+      createdBy,
+      createdByName
     } = payload;
 
-    if (!titre || !destination || !pays || !ville || !dateDepart || !dateRetour || !motif) {
+    if (
+      !titre ||
+      !destination ||
+      !pays ||
+      !ville ||
+      !dateDepart ||
+      !dateRetour ||
+      !motif ||
+      !createdBy
+    ) {
       return {
         success: false,
         message: 'Veuillez remplir tous les champs.'
@@ -29,6 +56,54 @@ resolver.define('createMission', async ({ payload }) => {
       };
     }
 
+    const jiraPayload = {
+      fields: {
+        project: {
+          key: PROJECT_KEY
+        },
+        issuetype: {
+          name: ISSUE_TYPE_NAME
+        },
+        summary: titre,
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            toAdfParagraph("Mission créée depuis l'application Forge"),
+            toAdfParagraph(`Destination: ${destination}`),
+            toAdfParagraph(`Pays: ${pays}`),
+            toAdfParagraph(`Ville: ${ville}`),
+            toAdfParagraph(`Date départ: ${dateDepart}`),
+            toAdfParagraph(`Date retour: ${dateRetour}`),
+            toAdfParagraph(`Motif: ${motif}`),
+            toAdfParagraph(`Créée par: ${createdByName || 'Utilisateur'}`)
+          ]
+        }
+      }
+    };
+
+    const jiraResponse = await api.asApp().requestJira(
+      route`/rest/api/3/issue`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(jiraPayload)
+      }
+    );
+
+    if (!jiraResponse.ok) {
+      const errorText = await jiraResponse.text();
+      return {
+        success: false,
+        message: `Création ticket Jira échouée: ${errorText}`
+      };
+    }
+
+    const jiraIssue = await jiraResponse.json();
+
     const missionId = `mission-${Date.now()}`;
 
     const mission = {
@@ -41,14 +116,19 @@ resolver.define('createMission', async ({ payload }) => {
       dateRetour,
       motif,
       statut: 'En attente',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      createdBy,
+      createdByName: createdByName || 'Utilisateur',
+      issueId: jiraIssue.id,
+      issueKey: jiraIssue.key
     };
 
     await storage.set(missionId, mission);
 
     return {
       success: true,
-      message: 'Mission créée avec succès.'
+      message: `Mission créée avec succès. Ticket Jira: ${jiraIssue.key}`,
+      mission
     };
   } catch (error) {
     console.error('Erreur backend createMission:', error);
@@ -59,26 +139,32 @@ resolver.define('createMission', async ({ payload }) => {
   }
 });
 
-resolver.define('getMissions', async () => {
+resolver.define('getMissions', async ({ payload }) => {
   try {
-    const data = await storage
+    const userId = payload?.userId;
+
+    const results = await storage
       .query()
       .where('key', startsWith('mission-'))
       .getMany();
 
-    const missions = (data.results || []).map((item) => item.value);
+    const missions = results.results.map((item) => item.value);
 
-    missions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const isAdmin = ADMIN_IDS.includes(userId);
+
+    const filteredMissions = isAdmin
+      ? missions
+      : missions.filter((mission) => mission.createdBy === userId);
 
     return {
       success: true,
-      missions
+      missions: filteredMissions,
+      role: isAdmin ? 'admin' : 'employe'
     };
   } catch (error) {
     console.error('Erreur backend getMissions:', error);
     return {
       success: false,
-      missions: [],
       message: `Erreur backend: ${error.message}`
     };
   }
@@ -87,6 +173,13 @@ resolver.define('getMissions', async () => {
 resolver.define('getMissionById', async ({ payload }) => {
   try {
     const { missionId } = payload;
+
+    if (!missionId) {
+      return {
+        success: false,
+        message: 'missionId manquant.'
+      };
+    }
 
     const mission = await storage.get(missionId);
 
@@ -114,6 +207,13 @@ resolver.define('updateMissionStatus', async ({ payload }) => {
   try {
     const { missionId, statut } = payload;
 
+    if (!missionId || !statut) {
+      return {
+        success: false,
+        message: 'missionId ou statut manquant.'
+      };
+    }
+
     const mission = await storage.get(missionId);
 
     if (!mission) {
@@ -123,13 +223,17 @@ resolver.define('updateMissionStatus', async ({ payload }) => {
       };
     }
 
-    mission.statut = statut;
+    const updatedMission = {
+      ...mission,
+      statut
+    };
 
-    await storage.set(missionId, mission);
+    await storage.set(missionId, updatedMission);
 
     return {
       success: true,
-      message: 'Statut mis à jour avec succès.'
+      message: 'Statut mis à jour avec succès.',
+      mission: updatedMission
     };
   } catch (error) {
     console.error('Erreur backend updateMissionStatus:', error);
@@ -143,6 +247,13 @@ resolver.define('updateMissionStatus', async ({ payload }) => {
 resolver.define('deleteMission', async ({ payload }) => {
   try {
     const { missionId } = payload;
+
+    if (!missionId) {
+      return {
+        success: false,
+        message: 'missionId manquant.'
+      };
+    }
 
     const mission = await storage.get(missionId);
 
