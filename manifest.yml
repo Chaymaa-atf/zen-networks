@@ -13,6 +13,14 @@ modules:
     - key: resolver
       handler: index.handler
 
+    - key: attachment-consumer-fn
+      handler: consumer.handler
+
+  consumer:
+    - key: attachment-analysis-consumer
+      queue: attachment-analysis-queue
+      function: attachment-consumer-fn
+
 resources:
   - key: main
     path: src/frontend/index.jsx
@@ -27,3 +35,7 @@ permissions:
     - read:jira-work
     - write:jira-work
     - storage:app
+  external:
+    fetch:
+      backend:
+        - https://api.openai.com

@@ -31,3 +31,19 @@ export const createCharge = async (data) => {
 export const getMissionCharges = async (issueKey) => {
   return await invoke('getMissionCharges', { issueKey });
 };
+
+/* =========================
+   IA / EXTRACTION
+========================= */
+
+export const queueAttachmentAnalysis = async (data) => {
+  return await invoke('queueAttachmentAnalysis', data);
+};
+
+export const getChargeExtractedData = async (chargeKey) => {
+  return await invoke('getChargeExtractedData', { chargeKey });
+};
+
+export const markChargeAttachmentUploaded = async (data) => {
+  return await invoke('markChargeAttachmentUploaded', data);
+};

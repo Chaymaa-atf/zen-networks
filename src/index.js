@@ -1,15 +1,16 @@
 import Resolver from '@forge/resolver';
 import api, { route, storage, startsWith } from '@forge/api';
+import { Queue } from '@forge/events';
 
 const resolver = new Resolver();
+const queue = new Queue({ key: 'attachment-analysis-queue' });
 
 const ADMIN_IDS = ['ID_ADMIN_1'];
 
 // À adapter selon ton projet Jira
 const PROJECT_KEY = 'FOR';
 const ISSUE_TYPE_NAME = 'Task';
-const SUBTASK_ISSUE_TYPE_NAME = 'Sous-tâche'; 
-// Si ça ne marche pas dans ton Jira, remplace par le vrai nom exact du type de sous-tâche
+const SUBTASK_ISSUE_TYPE_NAME = 'Sous-tâche';
 
 /* =========================
    Helpers
@@ -203,6 +204,8 @@ resolver.define('getMissions', async ({ payload }) => {
       ? missions
       : missions.filter((mission) => mission.createdBy === userId);
 
+    filteredMissions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
     return {
       success: true,
       missions: filteredMissions,
@@ -212,7 +215,8 @@ resolver.define('getMissions', async ({ payload }) => {
     console.error('Erreur backend getMissions:', error);
     return {
       success: false,
-      message: `Erreur backend: ${error.message}`
+      message: `Erreur backend: ${error.message}`,
+      missions: []
     };
   }
 });
@@ -484,17 +488,107 @@ resolver.define('getMissionCharges', async ({ payload }) => {
     }
 
     const jql = `parent = "${issueKey}"`;
-    const data = await searchIssuesByJql(jql, ['summary', 'status', 'issuetype']);
+    const data = await searchIssuesByJql(jql, ['summary', 'status', 'issuetype', 'attachment']);
+
+    const charges = await Promise.all(
+      (data.issues || []).map(async (issue) => {
+        const attachments = issue.fields?.attachment || [];
+        let extractedData = null;
+
+        if (attachments.length > 0) {
+          const firstAttachment = attachments[0];
+          const storageKey = `charge-analysis-${issue.key}-${firstAttachment.id}`;
+          extractedData = await storage.get(storageKey);
+        }
+
+        return {
+          ...issue,
+          extractedData: extractedData || null
+        };
+      })
+    );
 
     return {
       success: true,
-      charges: data.issues || []
+      charges
     };
   } catch (error) {
     console.error('Erreur backend getMissionCharges:', error);
     return {
       success: false,
-      message: `Impossible de récupérer les charges: ${error.message}`
+      message: `Impossible de récupérer les charges: ${error.message}`,
+      charges: []
+    };
+  }
+});
+
+resolver.define('getChargeExtractedData', async ({ payload }) => {
+  try {
+    const issueKey = payload?.issueKey || null;
+    const attachmentId = payload?.attachmentId || null;
+
+    if (!issueKey || !attachmentId) {
+      return {
+        success: false,
+        message: 'issueKey ou attachmentId manquant.'
+      };
+    }
+
+    const storageKey = `charge-analysis-${issueKey}-${attachmentId}`;
+    const extractedData = await storage.get(storageKey);
+
+    return {
+      success: true,
+      issueKey,
+      attachmentId,
+      extractedData: extractedData || null
+    };
+  } catch (error) {
+    console.error('Erreur getChargeExtractedData :', error);
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+});
+
+resolver.define('markChargeAttachmentUploaded', async ({ payload }) => {
+  try {
+    const issueKey = payload?.issueKey || null;
+    const attachmentId = payload?.attachmentId || null;
+    const fileName = payload?.fileName || null;
+
+    if (!issueKey || !attachmentId || !fileName) {
+      return {
+        success: false,
+        message: 'issueKey, attachmentId ou fileName manquant.'
+      };
+    }
+
+    await queue.push({
+      body: {
+        action: 'analyze_attachment',
+        issueKey,
+        attachmentId,
+        fileName
+      }
+    });
+
+    return {
+      success: true,
+      message: 'Pièce jointe envoyée pour analyse automatique',
+      data: {
+        issueKey,
+        attachmentId,
+        fileName,
+        uploaded: true
+      }
+    };
+  } catch (error) {
+    console.error('Erreur markChargeAttachmentUploaded :', error);
+    return {
+      success: false,
+      message: error.message
     };
   }
 });
