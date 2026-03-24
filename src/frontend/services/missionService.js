@@ -23,3 +23,11 @@ export const deleteMission = async (missionId) => {
 export const getMissionAttachments = async (issueKey) => {
   return await invoke('getMissionAttachments', { issueKey });
 };
+
+export const createCharge = async (data) => {
+  return await invoke('createCharge', data);
+};
+
+export const getMissionCharges = async (issueKey) => {
+  return await invoke('getMissionCharges', { issueKey });
+};

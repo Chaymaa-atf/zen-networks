@@ -5,19 +5,66 @@ const resolver = new Resolver();
 
 const ADMIN_IDS = ['ID_ADMIN_1'];
 
-// À adapter
+// À adapter selon ton projet Jira
 const PROJECT_KEY = 'FOR';
 const ISSUE_TYPE_NAME = 'Task';
+const SUBTASK_ISSUE_TYPE_NAME = 'Sous-tâche'; 
+// Si ça ne marche pas dans ton Jira, remplace par le vrai nom exact du type de sous-tâche
+
+/* =========================
+   Helpers
+========================= */
 
 const toAdfParagraph = (text) => ({
   type: 'paragraph',
   content: [
     {
       type: 'text',
-      text
+      text: String(text || '')
     }
   ]
 });
+
+const normalizeText = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
+
+const getChargeLabel = (type) => {
+  const labelsByType = {
+    hotel: 'Hôtel',
+    restaurant: 'Restaurant',
+    avion: 'Billet avion',
+    carburant: 'Carburant'
+  };
+
+  return labelsByType[type] || 'Charge';
+};
+
+const searchIssuesByJql = async (jql, fields = []) => {
+  const fieldsParam = Array.isArray(fields) ? fields.join(',') : fields;
+
+  const response = await api.asApp().requestJira(
+    route`/rest/api/3/search/jql?jql=${jql}&fields=${fieldsParam}`,
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json'
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText);
+  }
+
+  return await response.json();
+};
+
+/* =========================
+   Missions
+========================= */
 
 resolver.define('createMission', async ({ payload }) => {
   try {
@@ -31,7 +78,7 @@ resolver.define('createMission', async ({ payload }) => {
       motif,
       createdBy,
       createdByName
-    } = payload;
+    } = payload || {};
 
     if (
       !titre ||
@@ -148,7 +195,7 @@ resolver.define('getMissions', async ({ payload }) => {
       .where('key', startsWith('mission-'))
       .getMany();
 
-    const missions = results.results.map((item) => item.value);
+    const missions = (results.results || []).map((item) => item.value);
 
     const isAdmin = ADMIN_IDS.includes(userId);
 
@@ -172,7 +219,7 @@ resolver.define('getMissions', async ({ payload }) => {
 
 resolver.define('getMissionById', async ({ payload }) => {
   try {
-    const { missionId } = payload;
+    const { missionId } = payload || {};
 
     if (!missionId) {
       return {
@@ -205,7 +252,7 @@ resolver.define('getMissionById', async ({ payload }) => {
 
 resolver.define('updateMissionStatus', async ({ payload }) => {
   try {
-    const { missionId, statut } = payload;
+    const { missionId, statut } = payload || {};
 
     if (!missionId || !statut) {
       return {
@@ -246,7 +293,7 @@ resolver.define('updateMissionStatus', async ({ payload }) => {
 
 resolver.define('deleteMission', async ({ payload }) => {
   try {
-    const { missionId } = payload;
+    const { missionId } = payload || {};
 
     if (!missionId) {
       return {
@@ -278,9 +325,14 @@ resolver.define('deleteMission', async ({ payload }) => {
     };
   }
 });
+
+/* =========================
+   Pièces jointes
+========================= */
+
 resolver.define('getMissionAttachments', async ({ payload }) => {
   try {
-    const { issueKey } = payload;
+    const { issueKey } = payload || {};
 
     if (!issueKey) {
       return {
@@ -318,6 +370,131 @@ resolver.define('getMissionAttachments', async ({ payload }) => {
     return {
       success: false,
       message: `Erreur backend: ${error.message}`
+    };
+  }
+});
+
+/* =========================
+   Charges
+========================= */
+
+resolver.define('createCharge', async ({ payload }) => {
+  try {
+    const { issueKey, type } = payload || {};
+
+    if (!issueKey || !type) {
+      return {
+        success: false,
+        message: 'issueKey ou type manquant.'
+      };
+    }
+
+    const chargeLabel = getChargeLabel(type);
+    const jql = `parent = "${issueKey}"`;
+
+    const searchData = await searchIssuesByJql(jql, ['summary', 'issuetype']);
+    const existingCharges = searchData.issues || [];
+
+    const existingCharge = existingCharges.find((issue) => {
+      const summary = normalizeText(issue.fields?.summary);
+      return summary === normalizeText(chargeLabel);
+    });
+
+    if (existingCharge) {
+      return {
+        success: true,
+        alreadyExists: true,
+        message: 'Charge déjà existante.',
+        chargeKey: existingCharge.key,
+        charge: existingCharge
+      };
+    }
+
+    const jiraPayload = {
+      fields: {
+        project: {
+          key: PROJECT_KEY
+        },
+        issuetype: {
+          name: SUBTASK_ISSUE_TYPE_NAME
+        },
+        parent: {
+          key: issueKey
+        },
+        summary: chargeLabel,
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            toAdfParagraph(`Type de charge : ${chargeLabel}`),
+            toAdfParagraph(`Mission parente : ${issueKey}`),
+            toAdfParagraph('Preuve à ajouter dans ce ticket.')
+          ]
+        }
+      }
+    };
+
+    const createResponse = await api.asApp().requestJira(
+      route`/rest/api/3/issue`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(jiraPayload)
+      }
+    );
+
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      return {
+        success: false,
+        message: `Création charge échouée: ${errorText}`
+      };
+    }
+
+    const subtask = await createResponse.json();
+
+    return {
+      success: true,
+      alreadyExists: false,
+      message: 'Charge ajoutée avec succès.',
+      chargeKey: subtask.key,
+      charge: subtask
+    };
+  } catch (error) {
+    console.error('Erreur backend createCharge:', error);
+    return {
+      success: false,
+      message: `Erreur backend: ${error.message}`
+    };
+  }
+});
+
+resolver.define('getMissionCharges', async ({ payload }) => {
+  try {
+    const { issueKey } = payload || {};
+
+    if (!issueKey) {
+      return {
+        success: false,
+        message: 'issueKey manquant.'
+      };
+    }
+
+    const jql = `parent = "${issueKey}"`;
+    const data = await searchIssuesByJql(jql, ['summary', 'status', 'issuetype']);
+
+    return {
+      success: true,
+      charges: data.issues || []
+    };
+  } catch (error) {
+    console.error('Erreur backend getMissionCharges:', error);
+    return {
+      success: false,
+      message: `Impossible de récupérer les charges: ${error.message}`
     };
   }
 });

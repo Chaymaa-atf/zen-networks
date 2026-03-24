@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Box,
   Button,
-  Heading,
   SectionMessage,
   Stack,
   Text
@@ -14,7 +13,8 @@ import MissionDetails from './components/MissionDetails';
 import {
   createMission,
   getMissions,
-  getMissionById
+  getMissionById,
+  deleteMission
 } from './services/missionService';
 
 const App = () => {
@@ -56,8 +56,6 @@ const App = () => {
     const init = async () => {
       try {
         const context = await view.getContext();
-        console.log('CONTEXT = ', context);
-
         const accountId =
           context?.accountId ||
           context?.extension?.accountId ||
@@ -76,12 +74,7 @@ const App = () => {
           return;
         }
 
-        const user = {
-          accountId,
-          displayName
-        };
-
-        setCurrentUser(user);
+        setCurrentUser({ accountId, displayName });
         await loadMissions(accountId);
       } catch (error) {
         setIsError(true);
@@ -140,6 +133,21 @@ const App = () => {
     }
   };
 
+  const handleDeleteMission = async (missionId) => {
+    if (!window.confirm('Confirmer la suppression de cette mission ?')) return;
+    setResultMessage('');
+    setIsError(false);
+    try {
+      const response = await deleteMission(missionId);
+      setResultMessage(response.message);
+      setIsError(!response.success);
+      if (response.success) await loadMissions(currentUser?.accountId);
+    } catch (error) {
+      setIsError(true);
+      setResultMessage(`Erreur frontend: ${error.message}`);
+    }
+  };
+
   const handleBackToList = async () => {
     setShowDetails(false);
     setSelectedMission(null);
@@ -152,16 +160,6 @@ const App = () => {
   return (
     <Box>
       <Stack space="space.300">
-        <Stack space="space.100">
-         
-          <Text>{userRole === 'admin' ? 'Toutes les missions' : 'Mes missions'}</Text>
-        </Stack>
-
-        {!showForm && !showDetails && (
-          <Button appearance="primary" onClick={() => setShowForm(true)}>
-            Créer une mission
-          </Button>
-        )}
 
         {resultMessage && (
           <SectionMessage appearance={isError ? 'error' : 'success'}>
@@ -188,8 +186,12 @@ const App = () => {
             missions={missions}
             loading={loadingMissions}
             onViewDetails={handleViewDetails}
+            onCreateMission={() => setShowForm(true)}
+            onDeleteMission={handleDeleteMission}
+            userRole={userRole}
           />
         )}
+
       </Stack>
     </Box>
   );
