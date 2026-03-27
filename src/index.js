@@ -1,6 +1,7 @@
 import Resolver from '@forge/resolver';
 import api, { route, storage, startsWith } from '@forge/api';
 import { Queue } from '@forge/events';
+import { PDFDocument } from 'pdf-lib';
 
 const resolver = new Resolver();
 const queue = new Queue({ key: 'attachment-analysis-queue' });
@@ -42,6 +43,38 @@ const getChargeLabel = (type) => {
   return labelsByType[type] || 'Charge';
 };
 
+const buildChargeSummary = ({
+  type,
+  nomHotel,
+  fournisseur,
+  trajet,
+  date
+}) => {
+  const baseLabel = getChargeLabel(type);
+
+  if (type === 'hotel') {
+    return nomHotel ? `${baseLabel} - ${nomHotel}` : baseLabel;
+  }
+
+  if (type === 'restaurant') {
+    if (fournisseur && date) return `${baseLabel} - ${fournisseur} - ${date}`;
+    if (fournisseur) return `${baseLabel} - ${fournisseur}`;
+    return baseLabel;
+  }
+
+  if (type === 'carburant') {
+    return date ? `${baseLabel} - ${date}` : baseLabel;
+  }
+
+  if (type === 'avion') {
+    if (trajet && date) return `${baseLabel} - ${trajet} - ${date}`;
+    if (trajet) return `${baseLabel} - ${trajet}`;
+    return baseLabel;
+  }
+
+  return baseLabel;
+};
+
 const searchIssuesByJql = async (jql, fields = []) => {
   const fieldsParam = Array.isArray(fields) ? fields.join(',') : fields;
 
@@ -61,6 +94,147 @@ const searchIssuesByJql = async (jql, fields = []) => {
   }
 
   return await response.json();
+};
+
+const validateChargePayload = ({
+  type,
+  nomHotel,
+  ville,
+  dateDebut,
+  dateFin,
+  montant,
+  fournisseur,
+  trajet,
+  date,
+  quantite
+}) => {
+  if (type === 'hotel') {
+    if (!nomHotel || !ville || !dateDebut || !dateFin) {
+      return 'Pour un hôtel, nom hôtel, ville, date début et date fin sont obligatoires.';
+    }
+  }
+
+  if (type === 'restaurant') {
+    if (!fournisseur || !date || !montant) {
+      return 'Pour un restaurant, fournisseur, date et montant sont obligatoires.';
+    }
+  }
+
+  if (type === 'carburant') {
+    if (!quantite || !date || !montant) {
+      return 'Pour le carburant, quantité, date et montant sont obligatoires.';
+    }
+  }
+
+  if (type === 'avion') {
+    if (!trajet || !date || !montant) {
+      return 'Pour un billet avion, trajet, date et montant sont obligatoires.';
+    }
+  }
+
+  return null;
+};
+
+const buildChargeDescriptionLines = ({
+  issueKey,
+  type,
+  nomHotel,
+  ville,
+  dateDebut,
+  dateFin,
+  montant,
+  fournisseur,
+  commentaire,
+  trajet,
+  date,
+  quantite
+}) => {
+  const chargeLabel = getChargeLabel(type);
+
+  const lines = [
+    `Type de charge : ${chargeLabel}`,
+    `Mission parente : ${issueKey}`
+  ];
+
+  if (type === 'hotel') {
+    if (nomHotel) lines.push(`Nom hôtel : ${nomHotel}`);
+    if (ville) lines.push(`Ville : ${ville}`);
+    if (dateDebut) lines.push(`Date début : ${dateDebut}`);
+    if (dateFin) lines.push(`Date fin : ${dateFin}`);
+    if (montant) lines.push(`Montant : ${montant}`);
+  }
+
+  if (type === 'restaurant') {
+    if (fournisseur) lines.push(`Restaurant / Fournisseur : ${fournisseur}`);
+    if (date) lines.push(`Date : ${date}`);
+    if (montant) lines.push(`Montant : ${montant}`);
+  }
+
+  if (type === 'carburant') {
+    if (quantite) lines.push(`Quantité : ${quantite}`);
+    if (date) lines.push(`Date : ${date}`);
+    if (montant) lines.push(`Montant : ${montant}`);
+  }
+
+  if (type === 'avion') {
+    if (trajet) lines.push(`Trajet : ${trajet}`);
+    if (date) lines.push(`Date : ${date}`);
+    if (montant) lines.push(`Montant : ${montant}`);
+  }
+
+  if (commentaire) {
+    lines.push(`Commentaire : ${commentaire}`);
+  }
+
+  lines.push('Preuve à ajouter dans ce ticket.');
+
+  return lines;
+};
+
+const getAllMissionDocuments = async (issueKey) => {
+  const missionResponse = await api.asApp().requestJira(
+    route`/rest/api/3/issue/${issueKey}?fields=attachment,summary`,
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json'
+      }
+    }
+  );
+
+  if (!missionResponse.ok) {
+    const errorText = await missionResponse.text();
+    throw new Error(`Impossible de lire la mission: ${errorText}`);
+  }
+
+  const missionData = await missionResponse.json();
+
+  const missionAttachments = (missionData.fields?.attachment || []).map((file) => ({
+    ...file,
+    sourceIssueKey: issueKey,
+    sourceType: 'Mission',
+    sourceSummary: missionData.fields?.summary || 'Mission principale'
+  }));
+
+  const jql = `parent = "${issueKey}"`;
+  const chargesData = await searchIssuesByJql(jql, ['summary', 'attachment']);
+  const charges = chargesData.issues || [];
+
+  const chargeAttachments = charges.flatMap((charge) =>
+    (charge.fields?.attachment || []).map((file) => ({
+      ...file,
+      sourceIssueKey: charge.key,
+      sourceType: charge.fields?.summary || 'Charge',
+      sourceSummary: charge.fields?.summary || 'Charge'
+    }))
+  );
+
+  return [...missionAttachments, ...chargeAttachments];
+};
+
+const getExtension = (filename = '') => {
+  const parts = filename.split('.');
+  return parts.length > 1 ? parts.pop().toLowerCase() : '';
 };
 
 /* =========================
@@ -384,7 +558,20 @@ resolver.define('getMissionAttachments', async ({ payload }) => {
 
 resolver.define('createCharge', async ({ payload }) => {
   try {
-    const { issueKey, type } = payload || {};
+    const {
+      issueKey,
+      type,
+      nomHotel,
+      ville,
+      dateDebut,
+      dateFin,
+      montant,
+      fournisseur,
+      commentaire,
+      trajet,
+      date,
+      quantite
+    } = payload || {};
 
     if (!issueKey || !type) {
       return {
@@ -393,22 +580,64 @@ resolver.define('createCharge', async ({ payload }) => {
       };
     }
 
-    const chargeLabel = getChargeLabel(type);
-    const jql = `parent = "${issueKey}"`;
+    const validationError = validateChargePayload({
+      type,
+      nomHotel,
+      ville,
+      dateDebut,
+      dateFin,
+      montant,
+      fournisseur,
+      trajet,
+      date,
+      quantite
+    });
 
-    const searchData = await searchIssuesByJql(jql, ['summary', 'issuetype']);
+    if (validationError) {
+      return {
+        success: false,
+        message: validationError
+      };
+    }
+
+    const chargeLabel = getChargeLabel(type);
+    const chargeSummary = buildChargeSummary({
+      type,
+      nomHotel,
+      fournisseur,
+      trajet,
+      date
+    });
+
+    const descriptionLines = buildChargeDescriptionLines({
+      issueKey,
+      type,
+      nomHotel,
+      ville,
+      dateDebut,
+      dateFin,
+      montant,
+      fournisseur,
+      commentaire,
+      trajet,
+      date,
+      quantite
+    });
+
+    const jql = `parent = "${issueKey}"`;
+    const searchData = await searchIssuesByJql(jql, ['summary']);
     const existingCharges = searchData.issues || [];
 
     const existingCharge = existingCharges.find((issue) => {
       const summary = normalizeText(issue.fields?.summary);
-      return summary === normalizeText(chargeLabel);
+      return summary === normalizeText(chargeSummary);
     });
 
     if (existingCharge) {
       return {
         success: true,
         alreadyExists: true,
-        message: 'Charge déjà existante.',
+        message: 'Cette charge existe déjà.',
         chargeKey: existingCharge.key,
         charge: existingCharge
       };
@@ -425,15 +654,11 @@ resolver.define('createCharge', async ({ payload }) => {
         parent: {
           key: issueKey
         },
-        summary: chargeLabel,
+        summary: chargeSummary,
         description: {
           type: 'doc',
           version: 1,
-          content: [
-            toAdfParagraph(`Type de charge : ${chargeLabel}`),
-            toAdfParagraph(`Mission parente : ${issueKey}`),
-            toAdfParagraph('Preuve à ajouter dans ce ticket.')
-          ]
+          content: descriptionLines.map((line) => toAdfParagraph(line))
         }
       }
     };
@@ -465,7 +690,11 @@ resolver.define('createCharge', async ({ payload }) => {
       alreadyExists: false,
       message: 'Charge ajoutée avec succès.',
       chargeKey: subtask.key,
-      charge: subtask
+      charge: {
+        key: subtask.key,
+        summary: chargeSummary,
+        type: chargeLabel
+      }
     };
   } catch (error) {
     console.error('Erreur backend createCharge:', error);
@@ -488,7 +717,13 @@ resolver.define('getMissionCharges', async ({ payload }) => {
     }
 
     const jql = `parent = "${issueKey}"`;
-    const data = await searchIssuesByJql(jql, ['summary', 'status', 'issuetype', 'attachment']);
+    const data = await searchIssuesByJql(jql, [
+      'summary',
+      'status',
+      'issuetype',
+      'attachment',
+      'description'
+    ]);
 
     const charges = await Promise.all(
       (data.issues || []).map(async (issue) => {
@@ -589,6 +824,153 @@ resolver.define('markChargeAttachmentUploaded', async ({ payload }) => {
     return {
       success: false,
       message: error.message
+    };
+  }
+});
+
+resolver.define('getMissionAllDocuments', async ({ payload }) => {
+  try {
+    const { issueKey } = payload || {};
+
+    if (!issueKey) {
+      return {
+        success: false,
+        message: 'issueKey manquant.',
+        attachments: []
+      };
+    }
+
+    const allDocuments = await getAllMissionDocuments(issueKey);
+
+    return {
+      success: true,
+      attachments: allDocuments
+    };
+  } catch (error) {
+    console.error('Erreur backend getMissionAllDocuments:', error);
+    return {
+      success: false,
+      message: `Erreur backend: ${error.message}`,
+      attachments: []
+    };
+  }
+});
+
+/* =========================
+   PDF
+========================= */
+
+resolver.define('generateMissionPdf', async ({ payload }) => {
+  try {
+    const { issueKey } = payload || {};
+
+    if (!issueKey) {
+      return {
+        success: false,
+        message: 'issueKey manquant.'
+      };
+    }
+
+    const documents = await getAllMissionDocuments(issueKey);
+
+    if (!documents.length) {
+      return {
+        success: false,
+        message: 'Aucun document trouvé pour cette mission.'
+      };
+    }
+
+    const finalPdf = await PDFDocument.create();
+    const skippedFiles = [];
+
+    for (const file of documents) {
+      try {
+        const ext = getExtension(file.filename);
+
+        const fileResponse = await api.asApp().requestJira(
+          route`/rest/api/3/attachment/content/${file.id}`,
+          {
+            method: 'GET',
+            headers: {
+              Accept: '*/*'
+            }
+          }
+        );
+
+        if (!fileResponse.ok) {
+          skippedFiles.push({
+            filename: file.filename,
+            reason: 'Téléchargement impossible'
+          });
+          continue;
+        }
+
+        const fileBytes = new Uint8Array(await fileResponse.arrayBuffer());
+
+        if (ext === 'pdf') {
+          const sourcePdf = await PDFDocument.load(fileBytes);
+          const copiedPages = await finalPdf.copyPages(
+            sourcePdf,
+            sourcePdf.getPageIndices()
+          );
+          copiedPages.forEach((page) => finalPdf.addPage(page));
+          continue;
+        }
+
+        if (ext === 'jpg' || ext === 'jpeg') {
+          const image = await finalPdf.embedJpg(fileBytes);
+          const { width, height } = image.scale(1);
+          const page = finalPdf.addPage([width, height]);
+
+          page.drawImage(image, {
+            x: 0,
+            y: 0,
+            width,
+            height
+          });
+          continue;
+        }
+
+        if (ext === 'png') {
+          const image = await finalPdf.embedPng(fileBytes);
+          const { width, height } = image.scale(1);
+          const page = finalPdf.addPage([width, height]);
+
+          page.drawImage(image, {
+            x: 0,
+            y: 0,
+            width,
+            height
+          });
+          continue;
+        }
+
+        skippedFiles.push({
+          filename: file.filename,
+          reason: 'Format non supporté'
+        });
+      } catch (err) {
+        skippedFiles.push({
+          filename: file.filename,
+          reason: err.message
+        });
+      }
+    }
+
+    const pdfBytes = await finalPdf.save();
+    const pdfBase64 = Buffer.from(pdfBytes).toString('base64');
+
+    return {
+      success: true,
+      fileName: `mission-${issueKey}-documents.pdf`,
+      pdfBase64,
+      skippedFiles
+    };
+  } catch (error) {
+    console.error('Erreur backend generateMissionPdf:', error);
+    return {
+      success: false,
+      message: `Erreur backend: ${error.message}`
     };
   }
 });
