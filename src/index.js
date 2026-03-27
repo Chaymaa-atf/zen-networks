@@ -725,27 +725,9 @@ resolver.define('getMissionCharges', async ({ payload }) => {
       'description'
     ]);
 
-    const charges = await Promise.all(
-      (data.issues || []).map(async (issue) => {
-        const attachments = issue.fields?.attachment || [];
-        let extractedData = null;
-
-        if (attachments.length > 0) {
-          const firstAttachment = attachments[0];
-          const storageKey = `charge-analysis-${issue.key}-${firstAttachment.id}`;
-          extractedData = await storage.get(storageKey);
-        }
-
-        return {
-          ...issue,
-          extractedData: extractedData || null
-        };
-      })
-    );
-
     return {
       success: true,
-      charges
+      charges: data.issues || []
     };
   } catch (error) {
     console.error('Erreur backend getMissionCharges:', error);

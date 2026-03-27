@@ -14,11 +14,9 @@ import {
 import { xcss } from '@forge/react';
 import { router } from '@forge/bridge';
 import {
-  getMissionAttachments,
   getMissionAllDocuments,
   getMissionCharges,
   createCharge,
-  markChargeAttachmentUploaded,
   generateMissionPdf
 } from '../services/missionService';
 
@@ -53,15 +51,6 @@ const sectionHeaderStyles = xcss({
   marginBottom: 'space.150'
 });
 
-const chargeItemStyles = xcss({
-  backgroundColor: 'color.background.input',
-  borderRadius: 'border.radius.200',
-  borderWidth: 'border.width',
-  borderStyle: 'solid',
-  borderColor: 'color.border',
-  padding: 'space.150'
-});
-
 const docItemStyles = xcss({
   borderBottomWidth: 'border.width',
   borderBottomStyle: 'solid',
@@ -89,6 +78,62 @@ const softBoxStyles = xcss({
   textAlign: 'center',
   backgroundColor: 'color.background.neutral.subtle',
   borderRadius: 'border.radius.200'
+});
+
+/* Tableau charges */
+
+const tableWrapperStyles = xcss({
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderColor: 'color.border',
+  borderRadius: 'border.radius.200',
+  overflow: 'hidden'
+});
+
+const tableHeaderRowStyles = xcss({
+  backgroundColor: 'color.background.neutral.subtle',
+  paddingBlock: 'space.100',
+  paddingInline: 'space.150',
+  borderBottomWidth: 'border.width',
+  borderBottomStyle: 'solid',
+  borderBottomColor: 'color.border'
+});
+
+const tableRowStyles = xcss({
+  paddingBlock: 'space.100',
+  paddingInline: 'space.150',
+  borderBottomWidth: 'border.width',
+  borderBottomStyle: 'solid',
+  borderBottomColor: 'color.border'
+});
+
+const tableLastRowStyles = xcss({
+  paddingBlock: 'space.100',
+  paddingInline: 'space.150'
+});
+
+const colTypeStyles = xcss({
+  width: '14%'
+});
+
+const colDetailsStyles = xcss({
+  width: '26%'
+});
+
+const colDateStyles = xcss({
+  width: '18%'
+});
+
+const colMontantStyles = xcss({
+  width: '12%'
+});
+
+const colKeyStyles = xcss({
+  width: '10%'
+});
+
+const colActionsStyles = xcss({
+  width: '20%'
 });
 
 /* ─────────────────────────────
@@ -131,6 +176,81 @@ const getChargeLabelFront = (type) => {
   }
 };
 
+const extractDescriptionLines = (charge) => {
+  const content = charge?.fields?.description?.content || [];
+
+  return content
+    .map((block) => {
+      const text = (block.content || [])
+        .map((item) => item.text || '')
+        .join('');
+      return text.trim();
+    })
+    .filter(Boolean);
+};
+
+const getLineValue = (lines, label) => {
+  const prefix = `${label} :`;
+  const line = lines.find((item) => item.startsWith(prefix));
+  return line ? line.slice(prefix.length).trim() : '';
+};
+
+const getChargeTypeFromSummary = (summary = '') => {
+  const value = summary.toLowerCase();
+
+  if (value.includes('hôtel') || value.includes('hotel')) return 'Hôtel';
+  if (value.includes('restaurant')) return 'Restaurant';
+  if (value.includes('carburant')) return 'Carburant';
+  if (value.includes('billet avion') || value.includes('avion')) return 'Billet avion';
+
+  return 'Charge';
+};
+
+const getChargeTableData = (charge) => {
+  const summary = charge?.fields?.summary || '';
+  const lines = extractDescriptionLines(charge);
+
+  const nomHotel = getLineValue(lines, 'Nom hôtel');
+  const ville = getLineValue(lines, 'Ville');
+  const restaurant = getLineValue(lines, 'Restaurant / Fournisseur');
+  const trajet = getLineValue(lines, 'Trajet');
+  const quantite = getLineValue(lines, 'Quantité');
+
+  const date = getLineValue(lines, 'Date');
+  const dateDebut = getLineValue(lines, 'Date début');
+  const dateFin = getLineValue(lines, 'Date fin');
+  const montant = getLineValue(lines, 'Montant');
+
+  let details = '—';
+
+  if (nomHotel) {
+    details = ville ? `${nomHotel} - ${ville}` : nomHotel;
+  } else if (restaurant) {
+    details = restaurant;
+  } else if (trajet) {
+    details = trajet;
+  } else if (quantite) {
+    details = quantite;
+  }
+
+  let displayDate = '—';
+  if (dateDebut && dateFin) {
+    displayDate = `${dateDebut} → ${dateFin}`;
+  } else if (dateDebut) {
+    displayDate = dateDebut;
+  } else if (date) {
+    displayDate = date;
+  }
+
+  return {
+    type: getChargeTypeFromSummary(summary),
+    details,
+    date: displayDate,
+    montant: montant || '—',
+    issueKey: charge?.key || '—'
+  };
+};
+
 const MissionDetails = ({ mission, onBack }) => {
   const [attachments, setAttachments] = useState([]);
   const [loadingAttachments, setLoadingAttachments] = useState(false);
@@ -138,7 +258,6 @@ const MissionDetails = ({ mission, onBack }) => {
   const [charges, setCharges] = useState([]);
   const [loadingCharges, setLoadingCharges] = useState(false);
 
-  const [analysisMessage, setAnalysisMessage] = useState('');
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const [selectedChargeType, setSelectedChargeType] = useState(null);
@@ -372,7 +491,6 @@ const MissionDetails = ({ mission, onBack }) => {
 
   const handleUploadForCharge = async (chargeKey) => {
     try {
-      localStorage.setItem('pendingChargeIssueKey', chargeKey);
       await router.open(`/browse/${chargeKey}`);
     } catch (e) {
       console.error(e);
@@ -535,62 +653,6 @@ const MissionDetails = ({ mission, onBack }) => {
   };
 
   useEffect(() => {
-    const runPendingAnalysis = async () => {
-      const pendingChargeIssueKey = localStorage.getItem('pendingChargeIssueKey');
-      if (!pendingChargeIssueKey) return;
-
-      try {
-        setAnalysisMessage('Vérification des pièces jointes...');
-
-        const res = await getMissionAttachments(pendingChargeIssueKey);
-
-        if (!res.success || !res.attachments || res.attachments.length === 0) {
-          setAnalysisMessage('Aucune pièce jointe trouvée sur cette charge.');
-          return;
-        }
-
-        const lastAttachment = res.attachments[res.attachments.length - 1];
-
-        const analysisRes = await markChargeAttachmentUploaded({
-          issueKey: pendingChargeIssueKey,
-          attachmentId: lastAttachment.id,
-          fileName: lastAttachment.filename
-        });
-
-        if (analysisRes.success) {
-          setAnalysisMessage('Analyse automatique lancée avec succès.');
-
-          setTimeout(async () => {
-            await loadCharges();
-            await loadAttachments();
-          }, 3000);
-        } else {
-          setAnalysisMessage(analysisRes.message || "Échec de l'analyse.");
-        }
-      } catch (e) {
-        console.error(e);
-        setAnalysisMessage("Erreur pendant l'analyse automatique.");
-      } finally {
-        localStorage.removeItem('pendingChargeIssueKey');
-      }
-    };
-
-    const handleFocus = async () => {
-      await runPendingAnalysis();
-      await loadCharges();
-      await loadAttachments();
-    };
-
-    window.addEventListener('focus', handleFocus);
-
-    runPendingAnalysis();
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [mission?.issueKey]);
-
-  useEffect(() => {
     loadAttachments();
     loadCharges();
   }, [mission?.issueKey]);
@@ -626,12 +688,6 @@ const MissionDetails = ({ mission, onBack }) => {
           )}
         </Inline>
       </Box>
-
-      {analysisMessage && (
-        <Box xcss={cardStyles}>
-          <Text>{analysisMessage}</Text>
-        </Box>
-      )}
 
       <Inline space="space.100" alignBlock="start">
         {[
@@ -681,12 +737,57 @@ const MissionDetails = ({ mission, onBack }) => {
         )}
 
         {!loadingCharges && charges.length > 0 && (
-          <Stack space="space.100">
-            {charges.map((charge) => (
-              <Box key={charge.id || charge.key} xcss={chargeItemStyles}>
-                <Stack space="space.100">
-                  <Inline spread="space-between" alignBlock="center">
-                    <Stack space="space.050">
+          <Box xcss={tableWrapperStyles}>
+            <Box xcss={tableHeaderRowStyles}>
+              <Inline spread="space-between" alignBlock="center">
+                <Box xcss={colTypeStyles}>
+                  <Text xcss={labelStyles}>TYPE</Text>
+                </Box>
+                <Box xcss={colDetailsStyles}>
+                  <Text xcss={labelStyles}>DÉTAILS</Text>
+                </Box>
+                <Box xcss={colDateStyles}>
+                  <Text xcss={labelStyles}>DATE(S)</Text>
+                </Box>
+                <Box xcss={colMontantStyles}>
+                  <Text xcss={labelStyles}>MONTANT</Text>
+                </Box>
+                <Box xcss={colKeyStyles}>
+                  <Text xcss={labelStyles}>CLÉ</Text>
+                </Box>
+                <Box xcss={colActionsStyles}>
+                  <Text xcss={labelStyles}>ACTIONS</Text>
+                </Box>
+              </Inline>
+            </Box>
+
+            {charges.map((charge, index) => {
+              const row = getChargeTableData(charge);
+              const isLast = index === charges.length - 1;
+
+              return (
+                <Box
+                  key={charge.id || charge.key}
+                  xcss={isLast ? tableLastRowStyles : tableRowStyles}
+                >
+                  <Inline spread="space-between" alignBlock="start">
+                    <Box xcss={colTypeStyles}>
+                      <Text>{row.type}</Text>
+                    </Box>
+
+                    <Box xcss={colDetailsStyles}>
+                      <Text>{row.details}</Text>
+                    </Box>
+
+                    <Box xcss={colDateStyles}>
+                      <Text>{row.date}</Text>
+                    </Box>
+
+                    <Box xcss={colMontantStyles}>
+                      <Text>{row.montant}</Text>
+                    </Box>
+
+                    <Box xcss={colKeyStyles}>
                       <Text
                         xcss={xcss({
                           color: 'color.link',
@@ -694,51 +795,32 @@ const MissionDetails = ({ mission, onBack }) => {
                           fontSize: '12px'
                         })}
                       >
-                        {charge.key}
+                        {row.issueKey}
                       </Text>
-                      <Text>{charge.fields?.summary || 'Sans titre'}</Text>
-                    </Stack>
-
-                    <Inline space="space.075">
-                      <Button
-                        appearance="subtle"
-                        onClick={() => router.open(`/browse/${charge.key}`)}
-                      >
-                        Ouvrir
-                      </Button>
-
-                      <Button
-                        appearance="primary"
-                        onClick={() => handleUploadForCharge(charge.key)}
-                      >
-                        + Pièce jointe
-                      </Button>
-                    </Inline>
-                  </Inline>
-
-                  {charge.extractedData && (
-                    <Box
-                      xcss={xcss({
-                        backgroundColor: 'color.background.neutral.subtle',
-                        borderRadius: 'border.radius.200',
-                        padding: 'space.150'
-                      })}
-                    >
-                      <Stack space="space.100">
-                        <Text xcss={labelStyles}>DONNÉES EXTRAITES</Text>
-                        <Text>Type : {charge.extractedData.type || '—'}</Text>
-                        <Text>Montant : {charge.extractedData.montant || '—'}</Text>
-                        <Text>Devise : {charge.extractedData.devise || '—'}</Text>
-                        <Text>Date : {charge.extractedData.date || '—'}</Text>
-                        <Text>Fournisseur : {charge.extractedData.fournisseur || '—'}</Text>
-                        <Text>Commentaire : {charge.extractedData.commentaire || '—'}</Text>
-                      </Stack>
                     </Box>
-                  )}
-                </Stack>
-              </Box>
-            ))}
-          </Stack>
+
+                    <Box xcss={colActionsStyles}>
+                      <Inline space="space.050">
+                        <Button
+                          appearance="subtle"
+                          onClick={() => router.open(`/browse/${charge.key}`)}
+                        >
+                          Ouvrir
+                        </Button>
+
+                        <Button
+                          appearance="primary"
+                          onClick={() => handleUploadForCharge(charge.key)}
+                        >
+                          + Pièce jointe
+                        </Button>
+                      </Inline>
+                    </Box>
+                  </Inline>
+                </Box>
+              );
+            })}
+          </Box>
         )}
       </Stack>
 
