@@ -859,7 +859,47 @@ resolver.define('getMissionAllDocuments', async ({ payload }) => {
 /* =========================
    PDF
 ========================= */
+const A4_PORTRAIT = { width: 595.28, height: 841.89 };
+const A4_LANDSCAPE = { width: 841.89, height: 595.28 };
+const PDF_MARGIN = 24;
 
+const fitInside = (srcWidth, srcHeight, maxWidth, maxHeight) => {
+  const ratio = Math.min(maxWidth / srcWidth, maxHeight / srcHeight);
+  return {
+    width: srcWidth * ratio,
+    height: srcHeight * ratio
+  };
+};
+
+const addImageAsFittedPage = async (finalPdf, imageBytes, type) => {
+  const image =
+    type === 'png'
+      ? await finalPdf.embedPng(imageBytes)
+      : await finalPdf.embedJpg(imageBytes);
+
+  const imgWidth = image.width;
+  const imgHeight = image.height;
+
+  const pageSize =
+    imgWidth >= imgHeight ? A4_LANDSCAPE : A4_PORTRAIT;
+
+  const page = finalPdf.addPage([pageSize.width, pageSize.height]);
+
+  const maxWidth = pageSize.width - PDF_MARGIN * 2;
+  const maxHeight = pageSize.height - PDF_MARGIN * 2;
+
+  const fitted = fitInside(imgWidth, imgHeight, maxWidth, maxHeight);
+
+  const x = (pageSize.width - fitted.width) / 2;
+  const y = (pageSize.height - fitted.height) / 2;
+
+  page.drawImage(image, {
+    x,
+    y,
+    width: fitted.width,
+    height: fitted.height
+  });
+};
 resolver.define('generateMissionPdf', async ({ payload }) => {
   try {
     const { issueKey } = payload || {};
@@ -918,30 +958,12 @@ resolver.define('generateMissionPdf', async ({ payload }) => {
         }
 
         if (ext === 'jpg' || ext === 'jpeg') {
-          const image = await finalPdf.embedJpg(fileBytes);
-          const { width, height } = image.scale(1);
-          const page = finalPdf.addPage([width, height]);
-
-          page.drawImage(image, {
-            x: 0,
-            y: 0,
-            width,
-            height
-          });
+          await addImageAsFittedPage(finalPdf, fileBytes, 'jpg');
           continue;
         }
 
         if (ext === 'png') {
-          const image = await finalPdf.embedPng(fileBytes);
-          const { width, height } = image.scale(1);
-          const page = finalPdf.addPage([width, height]);
-
-          page.drawImage(image, {
-            x: 0,
-            y: 0,
-            width,
-            height
-          });
+          await addImageAsFittedPage(finalPdf, fileBytes, 'png');
           continue;
         }
 
@@ -955,6 +977,14 @@ resolver.define('generateMissionPdf', async ({ payload }) => {
           reason: err.message
         });
       }
+    }
+
+    if (finalPdf.getPageCount() === 0) {
+      return {
+        success: false,
+        message: 'Aucun fichier exploitable pour générer le PDF.',
+        skippedFiles
+      };
     }
 
     const pdfBytes = await finalPdf.save();
