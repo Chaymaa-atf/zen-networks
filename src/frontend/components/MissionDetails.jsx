@@ -9,7 +9,8 @@ import {
   Text,
   Textfield,
   TextArea,
-  Label
+  Label,
+  Select
 } from '@forge/react';
 import { xcss } from '@forge/react';
 import { router } from '@forge/bridge';
@@ -155,22 +156,31 @@ const getStatusAppearance = (statut) => {
 };
 
 const CHARGE_TYPES = [
-  { type: 'hotel', label: 'Hôtel', emoji: '🏨' },
+  { type: 'hebergement', label: 'Hébergement', emoji: '🏨' },
   { type: 'restaurant', label: 'Restaurant', emoji: '🍽️' },
-  { type: 'avion', label: 'Billet avion', emoji: '✈️' },
-  { type: 'carburant', label: 'Carburant', emoji: '⛽' }
+  { type: 'transport', label: 'Transport', emoji: '🚗' }
+];
+
+const HEBERGEMENT_OPTIONS = [
+  { label: 'Hôtel', value: 'hotel' },
+  { label: 'Airbnb', value: 'airbnb' },
+  { label: 'Autre', value: 'autre' }
+];
+
+const TRANSPORT_OPTIONS = [
+  { label: 'Avion', value: 'avion' },
+  { label: 'Taxi / Uber', value: 'taxi_uber' },
+  { label: 'Voiture', value: 'voiture' }
 ];
 
 const getChargeLabelFront = (type) => {
   switch (type) {
-    case 'hotel':
-      return 'Hôtel';
+    case 'hebergement':
+      return 'Hébergement';
     case 'restaurant':
       return 'Restaurant';
-    case 'carburant':
-      return 'Carburant';
-    case 'avion':
-      return 'Billet avion';
+    case 'transport':
+      return 'Transport';
     default:
       return 'Charge';
   }
@@ -189,19 +199,59 @@ const extractDescriptionLines = (charge) => {
     .filter(Boolean);
 };
 
-const getLineValue = (lines, label) => {
-  const prefix = `${label} :`;
-  const line = lines.find((item) => item.startsWith(prefix));
-  return line ? line.slice(prefix.length).trim() : '';
+const normalizeText = (value) =>
+  (value || '')
+    .toString()
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+const getLineValueFlexible = (lines, labels) => {
+  const normalizedLines = lines.map((line) => ({
+    raw: line,
+    normalized: normalizeText(line)
+  }));
+
+  for (const label of labels) {
+    const normalizedLabel = normalizeText(label);
+    const prefix = `${normalizedLabel} :`;
+
+    const found = normalizedLines.find((item) =>
+      item.normalized.startsWith(prefix)
+    );
+
+    if (found) {
+      const index = found.raw.indexOf(':');
+      if (index !== -1) {
+        return found.raw.slice(index + 1).trim();
+      }
+    }
+  }
+
+  return '';
 };
 
 const getChargeTypeFromSummary = (summary = '') => {
-  const value = summary.toLowerCase();
+  const value = normalizeText(summary);
 
-  if (value.includes('hôtel') || value.includes('hotel')) return 'Hôtel';
-  if (value.includes('restaurant')) return 'Restaurant';
-  if (value.includes('carburant')) return 'Carburant';
-  if (value.includes('billet avion') || value.includes('avion')) return 'Billet avion';
+  if (value.includes('hebergement') || value.includes('hotel') || value.includes('airbnb')) {
+    return 'Hébergement';
+  }
+
+  if (value.includes('restaurant')) {
+    return 'Restaurant';
+  }
+
+  if (
+    value.includes('transport') ||
+    value.includes('avion') ||
+    value.includes('taxi') ||
+    value.includes('uber') ||
+    value.includes('voiture')
+  ) {
+    return 'Transport';
+  }
 
   return 'Charge';
 };
@@ -210,27 +260,97 @@ const getChargeTableData = (charge) => {
   const summary = charge?.fields?.summary || '';
   const lines = extractDescriptionLines(charge);
 
-  const nomHotel = getLineValue(lines, 'Nom hôtel');
-  const ville = getLineValue(lines, 'Ville');
-  const restaurant = getLineValue(lines, 'Restaurant / Fournisseur');
-  const trajet = getLineValue(lines, 'Trajet');
-  const quantite = getLineValue(lines, 'Quantité');
+  let typeHebergement = getLineValueFlexible(lines, [
+    'Type hébergement',
+    'Type hebergement'
+  ]);
 
-  const date = getLineValue(lines, 'Date');
-  const dateDebut = getLineValue(lines, 'Date début');
-  const dateFin = getLineValue(lines, 'Date fin');
-  const montant = getLineValue(lines, 'Montant');
+  let typeTransport = getLineValueFlexible(lines, [
+    'Type transport'
+  ]);
+
+  const nomHebergement = getLineValueFlexible(lines, [
+    'Nom hébergement',
+    'Nom hebergement',
+    'Nom hôtel',
+    'Nom hotel',
+    'Hotel',
+    'Hôtel',
+    'Hébergement'
+  ]);
+
+  const ville = getLineValueFlexible(lines, ['Ville']);
+
+  const restaurant = getLineValueFlexible(lines, [
+    'Restaurant / Fournisseur',
+    'Restaurant',
+    'Fournisseur',
+    'Nom du restaurant / fournisseur'
+  ]);
+
+  const villeDepart = getLineValueFlexible(lines, ['Ville départ', 'Ville depart']);
+  const villeArrivee = getLineValueFlexible(lines, ['Ville arrivée', 'Ville arrivee']);
+  const compagnie = getLineValueFlexible(lines, ['Compagnie']);
+
+  const typeVehicule = getLineValueFlexible(lines, ['Type véhicule', 'Type vehicule']);
+  const chevaux = getLineValueFlexible(lines, ['Chevaux']);
+  const kilometrage = getLineValueFlexible(lines, ['Kilométrage', 'Kilometrage']);
+
+  const date = getLineValueFlexible(lines, ['Date']);
+  const dateDebut = getLineValueFlexible(lines, ['Date début', 'Date debut']);
+  const dateFin = getLineValueFlexible(lines, ['Date fin']);
+  const montant = getLineValueFlexible(lines, ['Montant']);
+
+  const normalizedSummary = normalizeText(summary);
+
+  if (!typeHebergement) {
+    if (normalizedSummary.includes('hotel')) {
+      typeHebergement = 'Hôtel';
+    } else if (normalizedSummary.includes('airbnb')) {
+      typeHebergement = 'Airbnb';
+    } else if (normalizedSummary.includes('autre')) {
+      typeHebergement = 'Autre';
+    }
+  }
+
+  if (!typeTransport) {
+    if (normalizedSummary.includes('avion')) {
+      typeTransport = 'Avion';
+    } else if (normalizedSummary.includes('taxi') || normalizedSummary.includes('uber')) {
+      typeTransport = 'Taxi / Uber';
+    } else if (normalizedSummary.includes('voiture')) {
+      typeTransport = 'Voiture';
+    }
+  }
 
   let details = '—';
 
-  if (nomHotel) {
-    details = ville ? `${nomHotel} - ${ville}` : nomHotel;
+  if (nomHebergement || typeHebergement || ville) {
+    const parts = [];
+
+    if (typeHebergement) parts.push(typeHebergement);
+    if (nomHebergement) parts.push(nomHebergement);
+    if (ville) parts.push(ville);
+
+    details = parts.join(' - ');
   } else if (restaurant) {
     details = restaurant;
-  } else if (trajet) {
-    details = trajet;
-  } else if (quantite) {
-    details = quantite;
+  } else if (typeTransport === 'Avion') {
+    const parts = ['Avion'];
+    if (villeDepart) parts.push(villeDepart);
+    if (villeArrivee) parts.push(villeArrivee);
+    if (compagnie) parts.push(compagnie);
+    details = parts.join(' - ');
+  } else if (typeTransport === 'Taxi / Uber') {
+    details = 'Taxi / Uber';
+  } else if (typeTransport === 'Voiture') {
+    const parts = ['Voiture'];
+    if (typeVehicule) parts.push(typeVehicule);
+    if (chevaux) parts.push(`${chevaux} ch`);
+    if (kilometrage) parts.push(`${kilometrage} km`);
+    details = parts.join(' - ');
+  } else if (summary) {
+    details = summary;
   }
 
   let displayDate = '—';
@@ -264,6 +384,8 @@ const MissionDetails = ({ mission, onBack }) => {
   const [showChargeForm, setShowChargeForm] = useState(false);
 
   const [chargeForm, setChargeForm] = useState({
+    typeHebergement: null,
+    typeTransport: null,
     nomHotel: '',
     ville: '',
     dateDebut: '',
@@ -271,17 +393,35 @@ const MissionDetails = ({ mission, onBack }) => {
     montant: '',
     fournisseur: '',
     commentaire: '',
-    trajet: '',
     date: '',
-    quantite: ''
+    villeDepart: '',
+    villeArrivee: '',
+    compagnie: '',
+    typeVehicule: '',
+    chevaux: '',
+    kilometrage: ''
   });
 
-  if (!mission) {
-    return <Text>Aucune mission sélectionnée.</Text>;
-  }
+  const [savingCharge, setSavingCharge] = useState(false);
+
+  const getDurationDays = () => {
+    if (!mission?.dateDepart || !mission?.dateRetour) return '—';
+
+    const start = new Date(mission.dateDepart);
+    const end = new Date(mission.dateRetour);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '—';
+
+    const diffTime = end.getTime() - start.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+    return diffDays > 0 ? diffDays : '—';
+  };
 
   const resetChargeForm = () => {
     setChargeForm({
+      typeHebergement: null,
+      typeTransport: null,
       nomHotel: '',
       ville: '',
       dateDebut: '',
@@ -289,9 +429,13 @@ const MissionDetails = ({ mission, onBack }) => {
       montant: '',
       fournisseur: '',
       commentaire: '',
-      trajet: '',
       date: '',
-      quantite: ''
+      villeDepart: '',
+      villeArrivee: '',
+      compagnie: '',
+      typeVehicule: '',
+      chevaux: '',
+      kilometrage: ''
     });
   };
 
@@ -315,7 +459,7 @@ const MissionDetails = ({ mission, onBack }) => {
   };
 
   const openJiraIssue = async () => {
-    if (mission.issueKey) {
+    if (mission?.issueKey) {
       await router.open(`/browse/${mission.issueKey}`);
     }
   };
@@ -343,8 +487,8 @@ const MissionDetails = ({ mission, onBack }) => {
 
       const res = await generateMissionPdf(mission.issueKey);
 
-      if (!res.success) {
-        window.alert(res.message || 'Erreur lors de la génération du PDF.');
+      if (!res?.success) {
+        window.alert(res?.message || 'Erreur lors de la génération du PDF.');
         return;
       }
 
@@ -392,7 +536,7 @@ const MissionDetails = ({ mission, onBack }) => {
     try {
       setLoadingAttachments(true);
       const res = await getMissionAllDocuments(mission.issueKey);
-      setAttachments(res.success ? res.attachments || [] : []);
+      setAttachments(res?.success ? res.attachments || [] : []);
     } catch (e) {
       console.error(e);
       setAttachments([]);
@@ -410,7 +554,7 @@ const MissionDetails = ({ mission, onBack }) => {
     try {
       setLoadingCharges(true);
       const res = await getMissionCharges(mission.issueKey);
-      setCharges(res.success ? res.charges || [] : []);
+      setCharges(res?.success ? res.charges || [] : []);
     } catch (e) {
       console.error(e);
       setCharges([]);
@@ -424,9 +568,15 @@ const MissionDetails = ({ mission, onBack }) => {
       return 'Type de charge introuvable.';
     }
 
-    if (selectedChargeType === 'hotel') {
-      if (!chargeForm.nomHotel || !chargeForm.ville || !chargeForm.dateDebut || !chargeForm.dateFin) {
-        return 'Merci de remplir nom hôtel, ville, date début et date fin.';
+    if (selectedChargeType === 'hebergement') {
+      if (
+        !chargeForm.typeHebergement ||
+        !chargeForm.nomHotel ||
+        !chargeForm.ville ||
+        !chargeForm.dateDebut ||
+        !chargeForm.dateFin
+      ) {
+        return 'Merci de remplir type hébergement, nom, ville, date début et date fin.';
       }
     }
 
@@ -436,15 +586,39 @@ const MissionDetails = ({ mission, onBack }) => {
       }
     }
 
-    if (selectedChargeType === 'carburant') {
-      if (!chargeForm.quantite || !chargeForm.date || !chargeForm.montant) {
-        return 'Merci de remplir quantité, date et montant.';
+    if (selectedChargeType === 'transport') {
+      if (!chargeForm.typeTransport) {
+        return 'Merci de choisir un type de transport.';
       }
-    }
 
-    if (selectedChargeType === 'avion') {
-      if (!chargeForm.trajet || !chargeForm.date || !chargeForm.montant) {
-        return 'Merci de remplir trajet, date et montant.';
+      if (chargeForm.typeTransport?.value === 'avion') {
+        if (
+          !chargeForm.villeDepart ||
+          !chargeForm.villeArrivee ||
+          !chargeForm.date ||
+          !chargeForm.compagnie ||
+          !chargeForm.montant
+        ) {
+          return 'Merci de remplir les informations de l’avion.';
+        }
+      }
+
+      if (chargeForm.typeTransport?.value === 'taxi_uber') {
+        if (!chargeForm.date || !chargeForm.montant) {
+          return 'Merci de remplir date et montant pour Taxi / Uber.';
+        }
+      }
+
+      if (chargeForm.typeTransport?.value === 'voiture') {
+        if (
+          !chargeForm.typeVehicule ||
+          !chargeForm.chevaux ||
+          !chargeForm.kilometrage ||
+          !chargeForm.date ||
+          !chargeForm.montant
+        ) {
+          return 'Merci de remplir les informations de la voiture.';
+        }
       }
     }
 
@@ -464,15 +638,19 @@ const MissionDetails = ({ mission, onBack }) => {
         return;
       }
 
+      setSavingCharge(true);
+
       const payload = {
         issueKey: mission.issueKey,
         type: selectedChargeType,
-        ...chargeForm
+        ...chargeForm,
+        typeHebergement: chargeForm.typeHebergement?.value || '',
+        typeTransport: chargeForm.typeTransport?.value || ''
       };
 
       const res = await createCharge(payload);
 
-      if (res.success) {
+      if (res?.success) {
         window.alert(res.message || 'Charge créée avec succès.');
         closeChargeForm();
         await loadCharges();
@@ -481,11 +659,13 @@ const MissionDetails = ({ mission, onBack }) => {
           await router.open(`/browse/${res.chargeKey}`);
         }
       } else {
-        window.alert(res.message || "Erreur lors de l'ajout de la charge.");
+        window.alert(res?.message || "Erreur lors de l'ajout de la charge.");
       }
     } catch (e) {
       console.error(e);
       window.alert("Erreur lors de l'ajout de la charge.");
+    } finally {
+      setSavingCharge(false);
     }
   };
 
@@ -510,9 +690,23 @@ const MissionDetails = ({ mission, onBack }) => {
             Formulaire : {getChargeLabelFront(selectedChargeType)}
           </Heading>
 
-          {selectedChargeType === 'hotel' && (
+          {selectedChargeType === 'hebergement' && (
             <Stack space="space.100">
-              <Label>Nom hôtel</Label>
+              <Label>Type hébergement</Label>
+              <Select
+                options={HEBERGEMENT_OPTIONS}
+                value={chargeForm.typeHebergement}
+                onChange={(value) => updateChargeField('typeHebergement', value)}
+                placeholder="Choisir un type"
+              />
+
+              <Label>
+                {chargeForm.typeHebergement?.value === 'hotel'
+                  ? 'Nom hôtel'
+                  : chargeForm.typeHebergement?.value === 'airbnb'
+                  ? 'Nom Airbnb'
+                  : 'Nom hébergement'}
+              </Label>
               <Textfield
                 value={chargeForm.nomHotel}
                 onChange={(e) => updateChargeField('nomHotel', e.target.value)}
@@ -581,42 +775,59 @@ const MissionDetails = ({ mission, onBack }) => {
             </Stack>
           )}
 
-          {selectedChargeType === 'carburant' && (
+          {selectedChargeType === 'transport' && (
             <Stack space="space.100">
-              <Label>Quantité</Label>
-              <Textfield
-                value={chargeForm.quantite}
-                onChange={(e) => updateChargeField('quantite', e.target.value)}
+              <Label>Type de transport</Label>
+              <Select
+                options={TRANSPORT_OPTIONS}
+                value={chargeForm.typeTransport}
+                onChange={(value) => updateChargeField('typeTransport', value)}
+                placeholder="Choisir un transport"
               />
 
-              <Label>Date</Label>
-              <Textfield
-                type="date"
-                value={chargeForm.date}
-                onChange={(e) => updateChargeField('date', e.target.value)}
-              />
+              {chargeForm.typeTransport?.value === 'avion' && (
+                <>
+                  <Label>Ville départ</Label>
+                  <Textfield
+                    value={chargeForm.villeDepart}
+                    onChange={(e) => updateChargeField('villeDepart', e.target.value)}
+                  />
 
-              <Label>Montant</Label>
-              <Textfield
-                value={chargeForm.montant}
-                onChange={(e) => updateChargeField('montant', e.target.value)}
-              />
+                  <Label>Ville arrivée</Label>
+                  <Textfield
+                    value={chargeForm.villeArrivee}
+                    onChange={(e) => updateChargeField('villeArrivee', e.target.value)}
+                  />
 
-              <Label>Commentaire</Label>
-              <TextArea
-                value={chargeForm.commentaire}
-                onChange={(e) => updateChargeField('commentaire', e.target.value)}
-              />
-            </Stack>
-          )}
+                  <Label>Compagnie</Label>
+                  <Textfield
+                    value={chargeForm.compagnie}
+                    onChange={(e) => updateChargeField('compagnie', e.target.value)}
+                  />
+                </>
+              )}
 
-          {selectedChargeType === 'avion' && (
-            <Stack space="space.100">
-              <Label>Trajet</Label>
-              <Textfield
-                value={chargeForm.trajet}
-                onChange={(e) => updateChargeField('trajet', e.target.value)}
-              />
+              {chargeForm.typeTransport?.value === 'voiture' && (
+                <>
+                  <Label>Type véhicule</Label>
+                  <Textfield
+                    value={chargeForm.typeVehicule}
+                    onChange={(e) => updateChargeField('typeVehicule', e.target.value)}
+                  />
+
+                  <Label>Chevaux</Label>
+                  <Textfield
+                    value={chargeForm.chevaux}
+                    onChange={(e) => updateChargeField('chevaux', e.target.value)}
+                  />
+
+                  <Label>Kilométrage</Label>
+                  <Textfield
+                    value={chargeForm.kilometrage}
+                    onChange={(e) => updateChargeField('kilometrage', e.target.value)}
+                  />
+                </>
+              )}
 
               <Label>Date</Label>
               <Textfield
@@ -640,10 +851,10 @@ const MissionDetails = ({ mission, onBack }) => {
           )}
 
           <Inline space="space.100">
-            <Button appearance="primary" onClick={handleSaveCharge}>
-              Enregistrer
+            <Button appearance="primary" onClick={handleSaveCharge} isDisabled={savingCharge}>
+              {savingCharge ? 'Enregistrement...' : 'Enregistrer'}
             </Button>
-            <Button appearance="subtle" onClick={closeChargeForm}>
+            <Button appearance="subtle" onClick={closeChargeForm} isDisabled={savingCharge}>
               Annuler
             </Button>
           </Inline>
@@ -653,9 +864,14 @@ const MissionDetails = ({ mission, onBack }) => {
   };
 
   useEffect(() => {
+    if (!mission) return;
     loadAttachments();
     loadCharges();
-  }, [mission?.issueKey]);
+  }, [mission?.issueKey, mission?.id]);
+
+  if (!mission) {
+    return <Text>Aucune mission sélectionnée.</Text>;
+  }
 
   return (
     <Stack space="space.300">
@@ -696,7 +912,8 @@ const MissionDetails = ({ mission, onBack }) => {
           { label: 'Ville', value: mission.ville },
           { label: 'Départ', value: mission.dateDepart },
           { label: 'Retour', value: mission.dateRetour },
-          { label: 'Motif', value: mission.motif }
+          { label: 'Motif', value: mission.motif },
+          { label: 'Nombre de jours', value: `${getDurationDays()} jour(s)` }
         ].map(({ label, value }) => (
           <Box key={label} xcss={infoCardStyles}>
             <Stack space="space.050">
@@ -838,7 +1055,7 @@ const MissionDetails = ({ mission, onBack }) => {
                 {generatingPdf ? 'Génération...' : '📄 Générer PDF'}
               </Button>
 
-              <Button appearance="primary" onClick={openJiraIssue}>
+              <Button appearance="primary" onClick={openJiraIssue} isDisabled={!mission.issueKey}>
                 + Ajouter document
               </Button>
             </Inline>

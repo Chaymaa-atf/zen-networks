@@ -16,6 +16,11 @@ export const getMissionById = async (missionId) => {
   return await invoke('getMissionById', { missionId });
 };
 
+export const updateMission = async (data) => {
+  return await invoke('updateMission', data);
+};
+
+
 export const updateMissionStatus = async (missionId, statut) => {
   return await invoke('updateMissionStatus', { missionId, statut });
 };
@@ -66,4 +71,15 @@ export const getChargeExtractedData = async (issueKey, attachmentId) => {
 
 export const markChargeAttachmentUploaded = async (data) => {
   return await invoke('markChargeAttachmentUploaded', data);
+};
+/* =========================
+   BUDGET PREVISIONNEL
+========================= */
+
+export const calculateMissionBudget = async (missionId) => {
+  return await invoke('calculateMissionBudget', { missionId });
+};
+
+export const getMissionBudget = async (missionId) => {
+  return await invoke('getMissionBudget', { missionId });
 };

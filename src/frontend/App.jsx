@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box,
-  Button,
   SectionMessage,
   Stack,
   Text
@@ -12,6 +11,7 @@ import MissionList from './components/MissionList';
 import MissionDetails from './components/MissionDetails';
 import {
   createMission,
+  updateMission,
   getMissions,
   getMissionById,
   deleteMission
@@ -29,6 +29,7 @@ const App = () => {
 
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState('employe');
+  const [isEditMode, setIsEditMode] = useState(false);
 
   const loadMissions = async (userId) => {
     try {
@@ -56,6 +57,7 @@ const App = () => {
     const init = async () => {
       try {
         const context = await view.getContext();
+
         const accountId =
           context?.accountId ||
           context?.extension?.accountId ||
@@ -86,31 +88,60 @@ const App = () => {
     init();
   }, []);
 
-  const handleCreateMission = async (data) => {
+  const resetViewState = () => {
+    setShowForm(false);
+    setShowDetails(false);
+    setSelectedMission(null);
+    setIsEditMode(false);
+  };
+
+  const handleOpenCreateForm = () => {
     setResultMessage('');
     setIsError(false);
+    setSelectedMission(null);
+    setIsEditMode(false);
+    setShowDetails(false);
+    setShowForm(true);
+  };
 
-    try {
-      const response = await createMission({
+  const handleCreateOrUpdateMission = async (data) => {
+  setResultMessage('');
+  setIsError(false);
+
+  try {
+    let response;
+
+    if (isEditMode && selectedMission?.id) {
+      response = await updateMission({
+        missionId: selectedMission.id,
+        titre: data.titre,
+        destination: data.ville,
+        pays: data.pays,
+        ville: data.ville,
+        dateDepart: data.dateDepart,
+        dateRetour: data.dateRetour,
+        motif: data.motif
+      });
+    } else {
+      response = await createMission({
         ...data,
         createdBy: currentUser?.accountId,
         createdByName: currentUser?.displayName
       });
-
-      setResultMessage(response.message);
-      setIsError(!response.success);
-
-      if (response.success) {
-        setShowForm(false);
-        setShowDetails(false);
-        setSelectedMission(null);
-        await loadMissions(currentUser?.accountId);
-      }
-    } catch (error) {
-      setIsError(true);
-      setResultMessage(`Erreur frontend: ${error.message}`);
     }
-  };
+
+    setResultMessage(response.message || '');
+    setIsError(!response.success);
+
+    if (response.success) {
+      resetViewState();
+      await loadMissions(currentUser?.accountId);
+    }
+  } catch (error) {
+    setIsError(true);
+    setResultMessage(`Erreur frontend: ${error.message}`);
+  }
+};
 
   const handleViewDetails = async (missionId) => {
     setResultMessage('');
@@ -123,6 +154,7 @@ const App = () => {
         setSelectedMission(response.mission);
         setShowDetails(true);
         setShowForm(false);
+        setIsEditMode(false);
       } else {
         setIsError(true);
         setResultMessage(response.message || 'Impossible de charger le détail.');
@@ -133,15 +165,42 @@ const App = () => {
     }
   };
 
-  const handleDeleteMission = async (missionId) => {
-    if (!window.confirm('Confirmer la suppression de cette mission ?')) return;
+  const handleEditMission = async (missionId) => {
     setResultMessage('');
     setIsError(false);
+
+    try {
+      const response = await getMissionById(missionId);
+
+      if (response.success) {
+        setSelectedMission(response.mission);
+        setIsEditMode(true);
+        setShowDetails(false);
+        setShowForm(true);
+      } else {
+        setIsError(true);
+        setResultMessage(response.message || 'Impossible de charger la mission à modifier.');
+      }
+    } catch (error) {
+      setIsError(true);
+      setResultMessage(`Erreur frontend: ${error.message}`);
+    }
+  };
+
+  const handleDeleteMission = async (missionId) => {
+    if (!window.confirm('Confirmer la suppression de cette mission ?')) return;
+
+    setResultMessage('');
+    setIsError(false);
+
     try {
       const response = await deleteMission(missionId);
-      setResultMessage(response.message);
+      setResultMessage(response.message || '');
       setIsError(!response.success);
-      if (response.success) await loadMissions(currentUser?.accountId);
+
+      if (response.success) {
+        await loadMissions(currentUser?.accountId);
+      }
     } catch (error) {
       setIsError(true);
       setResultMessage(`Erreur frontend: ${error.message}`);
@@ -149,8 +208,7 @@ const App = () => {
   };
 
   const handleBackToList = async () => {
-    setShowDetails(false);
-    setSelectedMission(null);
+    resetViewState();
 
     if (currentUser?.accountId) {
       await loadMissions(currentUser.accountId);
@@ -160,7 +218,6 @@ const App = () => {
   return (
     <Box>
       <Stack space="space.300">
-
         {resultMessage && (
           <SectionMessage appearance={isError ? 'error' : 'success'}>
             <Text>{resultMessage}</Text>
@@ -169,8 +226,11 @@ const App = () => {
 
         {showForm && (
           <MissionForm
-            onSubmit={handleCreateMission}
-            onCancel={() => setShowForm(false)}
+            key={isEditMode ? selectedMission?.id || 'edit' : 'create'}
+            onSubmit={handleCreateOrUpdateMission}
+            onCancel={handleBackToList}
+            initialValues={selectedMission}
+            isEditMode={isEditMode}
           />
         )}
 
@@ -186,12 +246,12 @@ const App = () => {
             missions={missions}
             loading={loadingMissions}
             onViewDetails={handleViewDetails}
-            onCreateMission={() => setShowForm(true)}
+            onCreateMission={handleOpenCreateForm}
             onDeleteMission={handleDeleteMission}
+            onEditMission={handleEditMission}
             userRole={userRole}
           />
         )}
-
       </Stack>
     </Box>
   );

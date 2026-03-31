@@ -16,7 +16,6 @@ const SUBTASK_ISSUE_TYPE_NAME = 'Sous-tâche';
 /* =========================
    Helpers
 ========================= */
-
 const toAdfParagraph = (text) => ({
   type: 'paragraph',
   content: [
@@ -32,12 +31,41 @@ const normalizeText = (value) =>
     .trim()
     .toLowerCase();
 
+const getTypeHebergementLabel = (typeHebergement) => {
+  const value =
+    typeof typeHebergement === 'string'
+      ? typeHebergement
+      : typeHebergement?.value || '';
+
+  const labels = {
+    hotel: 'Hôtel',
+    airbnb: 'Airbnb',
+    autre: 'Autre'
+  };
+
+  return labels[value] || 'Hébergement';
+};
+
+const getTypeTransportLabel = (typeTransport) => {
+  const value =
+    typeof typeTransport === 'string'
+      ? typeTransport
+      : typeTransport?.value || '';
+
+  const labels = {
+    avion: 'Avion',
+    taxi_uber: 'Taxi / Uber',
+    voiture: 'Voiture'
+  };
+
+  return labels[value] || 'Transport';
+};
+
 const getChargeLabel = (type) => {
   const labelsByType = {
-    hotel: 'Hôtel',
+    hebergement: 'Hébergement',
     restaurant: 'Restaurant',
-    avion: 'Billet avion',
-    carburant: 'Carburant'
+    transport: 'Transport'
   };
 
   return labelsByType[type] || 'Charge';
@@ -45,15 +73,25 @@ const getChargeLabel = (type) => {
 
 const buildChargeSummary = ({
   type,
+  typeHebergement,
+  typeTransport,
   nomHotel,
   fournisseur,
-  trajet,
-  date
+  date,
+  villeDepart,
+  villeArrivee,
+  typeVehicule
 }) => {
   const baseLabel = getChargeLabel(type);
 
-  if (type === 'hotel') {
-    return nomHotel ? `${baseLabel} - ${nomHotel}` : baseLabel;
+  if (type === 'hebergement') {
+    const hebergementTypeLabel = getTypeHebergementLabel(typeHebergement);
+
+    if (nomHotel) {
+      return `${baseLabel} - ${hebergementTypeLabel} - ${nomHotel}`;
+    }
+
+    return `${baseLabel} - ${hebergementTypeLabel}`;
   }
 
   if (type === 'restaurant') {
@@ -62,14 +100,24 @@ const buildChargeSummary = ({
     return baseLabel;
   }
 
-  if (type === 'carburant') {
-    return date ? `${baseLabel} - ${date}` : baseLabel;
-  }
+  if (type === 'transport') {
+    const transportLabel = getTypeTransportLabel(typeTransport);
 
-  if (type === 'avion') {
-    if (trajet && date) return `${baseLabel} - ${trajet} - ${date}`;
-    if (trajet) return `${baseLabel} - ${trajet}`;
-    return baseLabel;
+    if (typeTransport === 'avion') {
+      if (villeDepart && villeArrivee) {
+        return `${baseLabel} - ${transportLabel} - ${villeDepart} - ${villeArrivee}`;
+      }
+      return `${baseLabel} - ${transportLabel}`;
+    }
+
+    if (typeTransport === 'voiture') {
+      if (typeVehicule) {
+        return `${baseLabel} - ${transportLabel} - ${typeVehicule}`;
+      }
+      return `${baseLabel} - ${transportLabel}`;
+    }
+
+    return `${baseLabel} - ${transportLabel}`;
   }
 
   return baseLabel;
@@ -98,19 +146,25 @@ const searchIssuesByJql = async (jql, fields = []) => {
 
 const validateChargePayload = ({
   type,
+  typeHebergement,
   nomHotel,
   ville,
   dateDebut,
   dateFin,
   montant,
   fournisseur,
-  trajet,
   date,
-  quantite
+  typeTransport,
+  villeDepart,
+  villeArrivee,
+  compagnie,
+  typeVehicule,
+  chevaux,
+  kilometrage
 }) => {
-  if (type === 'hotel') {
-    if (!nomHotel || !ville || !dateDebut || !dateFin) {
-      return 'Pour un hôtel, nom hôtel, ville, date début et date fin sont obligatoires.';
+  if (type === 'hebergement') {
+    if (!typeHebergement || !nomHotel || !ville || !dateDebut || !dateFin) {
+      return 'Pour un hébergement, type hébergement, nom, ville, date début et date fin sont obligatoires.';
     }
   }
 
@@ -120,15 +174,27 @@ const validateChargePayload = ({
     }
   }
 
-  if (type === 'carburant') {
-    if (!quantite || !date || !montant) {
-      return 'Pour le carburant, quantité, date et montant sont obligatoires.';
+  if (type === 'transport') {
+    if (!typeTransport) {
+      return 'Pour un transport, le type de transport est obligatoire.';
     }
-  }
 
-  if (type === 'avion') {
-    if (!trajet || !date || !montant) {
-      return 'Pour un billet avion, trajet, date et montant sont obligatoires.';
+    if (typeTransport === 'avion') {
+      if (!villeDepart || !villeArrivee || !date || !compagnie || !montant) {
+        return 'Pour un avion, ville départ, ville arrivée, date, compagnie et montant sont obligatoires.';
+      }
+    }
+
+    if (typeTransport === 'taxi_uber') {
+      if (!date || !montant) {
+        return 'Pour Taxi / Uber, date et montant sont obligatoires.';
+      }
+    }
+
+    if (typeTransport === 'voiture') {
+      if (!typeVehicule || !chevaux || !kilometrage || !date || !montant) {
+        return 'Pour une voiture, type véhicule, chevaux, kilométrage, date et montant sont obligatoires.';
+      }
     }
   }
 
@@ -138,6 +204,7 @@ const validateChargePayload = ({
 const buildChargeDescriptionLines = ({
   issueKey,
   type,
+  typeHebergement,
   nomHotel,
   ville,
   dateDebut,
@@ -145,9 +212,14 @@ const buildChargeDescriptionLines = ({
   montant,
   fournisseur,
   commentaire,
-  trajet,
   date,
-  quantite
+  typeTransport,
+  villeDepart,
+  villeArrivee,
+  compagnie,
+  typeVehicule,
+  chevaux,
+  kilometrage
 }) => {
   const chargeLabel = getChargeLabel(type);
 
@@ -156,8 +228,11 @@ const buildChargeDescriptionLines = ({
     `Mission parente : ${issueKey}`
   ];
 
-  if (type === 'hotel') {
-    if (nomHotel) lines.push(`Nom hôtel : ${nomHotel}`);
+  if (type === 'hebergement') {
+    if (typeHebergement) {
+      lines.push(`Type hébergement : ${getTypeHebergementLabel(typeHebergement)}`);
+    }
+    if (nomHotel) lines.push(`Nom hébergement : ${nomHotel}`);
     if (ville) lines.push(`Ville : ${ville}`);
     if (dateDebut) lines.push(`Date début : ${dateDebut}`);
     if (dateFin) lines.push(`Date fin : ${dateFin}`);
@@ -170,14 +245,23 @@ const buildChargeDescriptionLines = ({
     if (montant) lines.push(`Montant : ${montant}`);
   }
 
-  if (type === 'carburant') {
-    if (quantite) lines.push(`Quantité : ${quantite}`);
-    if (date) lines.push(`Date : ${date}`);
-    if (montant) lines.push(`Montant : ${montant}`);
-  }
+  if (type === 'transport') {
+    if (typeTransport) {
+      lines.push(`Type transport : ${getTypeTransportLabel(typeTransport)}`);
+    }
 
-  if (type === 'avion') {
-    if (trajet) lines.push(`Trajet : ${trajet}`);
+    if (typeTransport === 'avion') {
+      if (villeDepart) lines.push(`Ville départ : ${villeDepart}`);
+      if (villeArrivee) lines.push(`Ville arrivée : ${villeArrivee}`);
+      if (compagnie) lines.push(`Compagnie : ${compagnie}`);
+    }
+
+    if (typeTransport === 'voiture') {
+      if (typeVehicule) lines.push(`Type véhicule : ${typeVehicule}`);
+      if (chevaux) lines.push(`Chevaux : ${chevaux}`);
+      if (kilometrage) lines.push(`Kilométrage : ${kilometrage}`);
+    }
+
     if (date) lines.push(`Date : ${date}`);
     if (montant) lines.push(`Montant : ${montant}`);
   }
@@ -244,6 +328,8 @@ const getExtension = (filename = '') => {
 resolver.define('createMission', async ({ payload }) => {
   try {
     const {
+      nomEmploye,
+      prenomEmploye,
       titre,
       destination,
       pays,
@@ -256,6 +342,8 @@ resolver.define('createMission', async ({ payload }) => {
     } = payload || {};
 
     if (
+      !nomEmploye ||
+      !prenomEmploye ||
       !titre ||
       !destination ||
       !pays ||
@@ -292,6 +380,7 @@ resolver.define('createMission', async ({ payload }) => {
           version: 1,
           content: [
             toAdfParagraph("Mission créée depuis l'application Forge"),
+            toAdfParagraph(`Employé: ${prenomEmploye} ${nomEmploye}`),
             toAdfParagraph(`Destination: ${destination}`),
             toAdfParagraph(`Pays: ${pays}`),
             toAdfParagraph(`Ville: ${ville}`),
@@ -330,6 +419,8 @@ resolver.define('createMission', async ({ payload }) => {
 
     const mission = {
       id: missionId,
+      nomEmploye,
+      prenomEmploye,
       titre,
       destination,
       pays,
@@ -561,6 +652,7 @@ resolver.define('createCharge', async ({ payload }) => {
     const {
       issueKey,
       type,
+      typeHebergement,
       nomHotel,
       ville,
       dateDebut,
@@ -568,9 +660,14 @@ resolver.define('createCharge', async ({ payload }) => {
       montant,
       fournisseur,
       commentaire,
-      trajet,
       date,
-      quantite
+      typeTransport,
+      villeDepart,
+      villeArrivee,
+      compagnie,
+      typeVehicule,
+      chevaux,
+      kilometrage
     } = payload || {};
 
     if (!issueKey || !type) {
@@ -582,15 +679,21 @@ resolver.define('createCharge', async ({ payload }) => {
 
     const validationError = validateChargePayload({
       type,
+      typeHebergement,
       nomHotel,
       ville,
       dateDebut,
       dateFin,
       montant,
       fournisseur,
-      trajet,
       date,
-      quantite
+      typeTransport,
+      villeDepart,
+      villeArrivee,
+      compagnie,
+      typeVehicule,
+      chevaux,
+      kilometrage
     });
 
     if (validationError) {
@@ -603,15 +706,20 @@ resolver.define('createCharge', async ({ payload }) => {
     const chargeLabel = getChargeLabel(type);
     const chargeSummary = buildChargeSummary({
       type,
+      typeHebergement,
+      typeTransport,
       nomHotel,
       fournisseur,
-      trajet,
-      date
+      date,
+      villeDepart,
+      villeArrivee,
+      typeVehicule
     });
 
     const descriptionLines = buildChargeDescriptionLines({
       issueKey,
       type,
+      typeHebergement,
       nomHotel,
       ville,
       dateDebut,
@@ -619,9 +727,14 @@ resolver.define('createCharge', async ({ payload }) => {
       montant,
       fournisseur,
       commentaire,
-      trajet,
       date,
-      quantite
+      typeTransport,
+      villeDepart,
+      villeArrivee,
+      compagnie,
+      typeVehicule,
+      chevaux,
+      kilometrage
     });
 
     const jql = `parent = "${issueKey}"`;
@@ -882,6 +995,7 @@ const addImageAsFittedPage = async (finalPdf, imageBytes, type) => {
     height: fitted.height
   });
 };
+
 resolver.define('generateMissionPdf', async ({ payload }) => {
   try {
     const { issueKey } = payload || {};
@@ -980,6 +1094,117 @@ resolver.define('generateMissionPdf', async ({ payload }) => {
     };
   } catch (error) {
     console.error('Erreur backend generateMissionPdf:', error);
+    return {
+      success: false,
+      message: `Erreur backend: ${error.message}`
+    };
+  }
+});
+
+resolver.define('updateMission', async ({ payload }) => {
+  try {
+    const {
+      missionId,
+      nomEmploye,
+      prenomEmploye,
+      titre,
+      destination,
+      pays,
+      ville,
+      dateDepart,
+      dateRetour,
+      motif
+    } = payload || {};
+
+    if (!missionId) {
+      return {
+        success: false,
+        message: 'missionId manquant.'
+      };
+    }
+
+    const mission = await storage.get(missionId);
+
+    if (!mission) {
+      return {
+        success: false,
+        message: 'Mission introuvable.'
+      };
+    }
+
+    const updatedMission = {
+      ...mission,
+      nomEmploye: nomEmploye ?? mission.nomEmploye,
+      prenomEmploye: prenomEmploye ?? mission.prenomEmploye,
+      titre: titre ?? mission.titre,
+      destination: destination ?? mission.destination,
+      pays: pays ?? mission.pays,
+      ville: ville ?? mission.ville,
+      dateDepart: dateDepart ?? mission.dateDepart,
+      dateRetour: dateRetour ?? mission.dateRetour,
+      motif: motif ?? mission.motif,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (updatedMission.dateRetour < updatedMission.dateDepart) {
+      return {
+        success: false,
+        message: 'La date de retour doit être après la date de départ.'
+      };
+    }
+
+    await storage.set(missionId, updatedMission);
+
+    if (mission.issueKey) {
+      const jiraPayload = {
+        fields: {
+          summary: updatedMission.titre,
+          description: {
+            type: 'doc',
+            version: 1,
+            content: [
+              toAdfParagraph("Mission modifiée depuis l'application Forge"),
+              toAdfParagraph(`Employé: ${updatedMission.prenomEmploye} ${updatedMission.nomEmploye}`),
+              toAdfParagraph(`Destination: ${updatedMission.destination}`),
+              toAdfParagraph(`Pays: ${updatedMission.pays}`),
+              toAdfParagraph(`Ville: ${updatedMission.ville}`),
+              toAdfParagraph(`Date départ: ${updatedMission.dateDepart}`),
+              toAdfParagraph(`Date retour: ${updatedMission.dateRetour}`),
+              toAdfParagraph(`Motif: ${updatedMission.motif}`),
+              toAdfParagraph(`Créée par: ${mission.createdByName || 'Utilisateur'}`)
+            ]
+          }
+        }
+      };
+
+      const jiraResponse = await api.asApp().requestJira(
+        route`/rest/api/3/issue/${mission.issueKey}`,
+        {
+          method: 'PUT',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(jiraPayload)
+        }
+      );
+
+      if (!jiraResponse.ok) {
+        const errorText = await jiraResponse.text();
+        return {
+          success: false,
+          message: `Mission locale modifiée, mais échec mise à jour Jira: ${errorText}`
+        };
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Mission modifiée avec succès.',
+      mission: updatedMission
+    };
+  } catch (error) {
+    console.error('Erreur backend updateMission:', error);
     return {
       success: false,
       message: `Erreur backend: ${error.message}`
