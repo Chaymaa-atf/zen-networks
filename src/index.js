@@ -1,8 +1,9 @@
 import Resolver from '@forge/resolver';
-import api, { route, storage, startsWith } from '@forge/api';
+import api, { route } from '@forge/api';
+import { kvs, WhereConditions } from '@forge/kvs';
 import { Queue } from '@forge/events';
 import { PDFDocument } from 'pdf-lib';
-
+import FormData from 'form-data';
 const resolver = new Resolver();
 const queue = new Queue({ key: 'attachment-analysis-queue' });
 
@@ -16,6 +17,7 @@ const SUBTASK_ISSUE_TYPE_NAME = 'Sous-tâche';
 /* =========================
    Helpers
 ========================= */
+
 const toAdfParagraph = (text) => ({
   type: 'paragraph',
   content: [
@@ -436,7 +438,7 @@ resolver.define('createMission', async ({ payload }) => {
       issueKey: jiraIssue.key
     };
 
-    await storage.set(missionId, mission);
+    await kvs.set(missionId, mission);
 
     return {
       success: true,
@@ -456,9 +458,9 @@ resolver.define('getMissions', async ({ payload }) => {
   try {
     const userId = payload?.userId;
 
-    const results = await storage
+    const results = await kvs
       .query()
-      .where('key', startsWith('mission-'))
+      .where('key', WhereConditions.beginsWith('mission-'))
       .getMany();
 
     const missions = (results.results || []).map((item) => item.value);
@@ -497,7 +499,7 @@ resolver.define('getMissionById', async ({ payload }) => {
       };
     }
 
-    const mission = await storage.get(missionId);
+    const mission = await kvs.get(missionId);
 
     if (!mission) {
       return {
@@ -530,7 +532,7 @@ resolver.define('updateMissionStatus', async ({ payload }) => {
       };
     }
 
-    const mission = await storage.get(missionId);
+    const mission = await kvs.get(missionId);
 
     if (!mission) {
       return {
@@ -544,7 +546,7 @@ resolver.define('updateMissionStatus', async ({ payload }) => {
       statut
     };
 
-    await storage.set(missionId, updatedMission);
+    await kvs.set(missionId, updatedMission);
 
     return {
       success: true,
@@ -571,7 +573,7 @@ resolver.define('deleteMission', async ({ payload }) => {
       };
     }
 
-    const mission = await storage.get(missionId);
+    const mission = await kvs.get(missionId);
 
     if (!mission) {
       return {
@@ -580,7 +582,7 @@ resolver.define('deleteMission', async ({ payload }) => {
       };
     }
 
-    await storage.delete(missionId);
+    await kvs.delete(missionId);
 
     return {
       success: true,
@@ -588,6 +590,117 @@ resolver.define('deleteMission', async ({ payload }) => {
     };
   } catch (error) {
     console.error('Erreur backend deleteMission:', error);
+    return {
+      success: false,
+      message: `Erreur backend: ${error.message}`
+    };
+  }
+});
+
+resolver.define('updateMission', async ({ payload }) => {
+  try {
+    const {
+      missionId,
+      nomEmploye,
+      prenomEmploye,
+      titre,
+      destination,
+      pays,
+      ville,
+      dateDepart,
+      dateRetour,
+      motif
+    } = payload || {};
+
+    if (!missionId) {
+      return {
+        success: false,
+        message: 'missionId manquant.'
+      };
+    }
+
+    const mission = await kvs.get(missionId);
+
+    if (!mission) {
+      return {
+        success: false,
+        message: 'Mission introuvable.'
+      };
+    }
+
+    const updatedMission = {
+      ...mission,
+      nomEmploye: nomEmploye ?? mission.nomEmploye,
+      prenomEmploye: prenomEmploye ?? mission.prenomEmploye,
+      titre: titre ?? mission.titre,
+      destination: destination ?? mission.destination,
+      pays: pays ?? mission.pays,
+      ville: ville ?? mission.ville,
+      dateDepart: dateDepart ?? mission.dateDepart,
+      dateRetour: dateRetour ?? mission.dateRetour,
+      motif: motif ?? mission.motif,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (updatedMission.dateRetour < updatedMission.dateDepart) {
+      return {
+        success: false,
+        message: 'La date de retour doit être après la date de départ.'
+      };
+    }
+
+    await kvs.set(missionId, updatedMission);
+
+    if (mission.issueKey) {
+      const jiraPayload = {
+        fields: {
+          summary: updatedMission.titre,
+          description: {
+            type: 'doc',
+            version: 1,
+            content: [
+              toAdfParagraph("Mission modifiée depuis l'application Forge"),
+              toAdfParagraph(`Employé: ${updatedMission.prenomEmploye} ${updatedMission.nomEmploye}`),
+              toAdfParagraph(`Destination: ${updatedMission.destination}`),
+              toAdfParagraph(`Pays: ${updatedMission.pays}`),
+              toAdfParagraph(`Ville: ${updatedMission.ville}`),
+              toAdfParagraph(`Date départ: ${updatedMission.dateDepart}`),
+              toAdfParagraph(`Date retour: ${updatedMission.dateRetour}`),
+              toAdfParagraph(`Motif: ${updatedMission.motif}`),
+              toAdfParagraph(`Créée par: ${mission.createdByName || 'Utilisateur'}`)
+            ]
+          }
+        }
+      };
+
+      const jiraResponse = await api.asApp().requestJira(
+        route`/rest/api/3/issue/${mission.issueKey}`,
+        {
+          method: 'PUT',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(jiraPayload)
+        }
+      );
+
+      if (!jiraResponse.ok) {
+        const errorText = await jiraResponse.text();
+        return {
+          success: false,
+          message: `Mission locale modifiée, mais échec mise à jour Jira: ${errorText}`
+        };
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Mission modifiée avec succès.',
+      mission: updatedMission
+    };
+  } catch (error) {
+    console.error('Erreur backend updateMission:', error);
     return {
       success: false,
       message: `Erreur backend: ${error.message}`
@@ -639,6 +752,115 @@ resolver.define('getMissionAttachments', async ({ payload }) => {
     return {
       success: false,
       message: `Erreur backend: ${error.message}`
+    };
+  }
+});
+
+resolver.define('getMissionAllDocuments', async ({ payload }) => {
+  try {
+    const { issueKey } = payload || {};
+
+    if (!issueKey) {
+      return {
+        success: false,
+        message: 'issueKey manquant.',
+        attachments: []
+      };
+    }
+
+    const allDocuments = await getAllMissionDocuments(issueKey);
+
+    return {
+      success: true,
+      attachments: allDocuments
+    };
+  } catch (error) {
+    console.error('Erreur backend getMissionAllDocuments:', error);
+    return {
+      success: false,
+      message: `Erreur backend: ${error.message}`,
+      attachments: []
+    };
+  }
+});
+
+resolver.define('uploadAttachment', async ({ payload }) => {
+  try {
+    const { issueKey, fileName, mimeType, base64Content } = payload;
+
+    const buffer = Buffer.from(base64Content, 'base64');
+
+    const form = new FormData();
+    form.append('file', buffer, fileName);
+
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/issue/${issueKey}/attachments`,
+      {
+        method: 'POST',
+        headers: {
+          'X-Atlassian-Token': 'no-check',
+          ...form.getHeaders()
+        },
+        body: form.getBuffer() // ✅ TRÈS IMPORTANT
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('UPLOAD ERROR:', error);
+
+      return { success: false, message: error };
+    }
+
+    const data = await response.json();
+
+    return {
+      success: true,
+      message: 'Upload OK',
+      data
+    };
+  } catch (e) {
+    console.error(e);
+    return { success: false, message: e.message };
+  }
+});
+
+resolver.define('markChargeAttachmentUploaded', async ({ payload }) => {
+  try {
+    const issueKey = payload?.issueKey || null;
+    const attachmentId = payload?.attachmentId || null;
+    const fileName = payload?.fileName || null;
+
+    if (!issueKey || !attachmentId || !fileName) {
+      return {
+        success: false,
+        message: 'issueKey, attachmentId ou fileName manquant.'
+      };
+    }
+
+    await queue.push({
+      body: {
+        issueKey,
+        attachmentId,
+        fileName
+      }
+    });
+
+    return {
+      success: true,
+      message: 'Pièce jointe envoyée pour analyse automatique',
+      data: {
+        issueKey,
+        attachmentId,
+        fileName,
+        uploaded: true
+      }
+    };
+  } catch (error) {
+    console.error('Erreur markChargeAttachmentUploaded :', error);
+    return {
+      success: false,
+      message: error.message
     };
   }
 });
@@ -852,10 +1074,104 @@ resolver.define('getMissionCharges', async ({ payload }) => {
   }
 });
 
-resolver.define('getChargeExtractedData', async ({ payload }) => {
+/* =========================
+   IA / Extraction
+========================= */
+
+resolver.define('getChargeExtractedData', async (req) => {
   try {
-    const issueKey = payload?.issueKey || null;
-    const attachmentId = payload?.attachmentId || null;
+    const { text } = req.payload || {};
+
+    if (!text || !String(text).trim()) {
+      return {
+        success: false,
+        message: 'Texte manquant.',
+        result: ''
+      };
+    }
+
+    const prompt = `
+Analyse ce texte extrait d'un justificatif de mission.
+
+Retourne uniquement du JSON valide avec exactement cette structure :
+
+{
+  "category": "",
+  "confidence": 0,
+  "date": "",
+  "amount": "",
+  "currency": "",
+  "details": "",
+  "rawText": ""
+}
+
+Catégories autorisées :
+- restaurant
+- hebergement
+- transport
+- inconnu
+
+Règles :
+- "amount" doit contenir seulement la valeur numérique si trouvée
+- "currency" doit être MAD, EUR, USD ou vide
+- "date" doit être la date trouvée dans le document ou vide
+- "details" doit être une phrase courte
+- "rawText" doit contenir le texte d'origine
+- N'invente pas d'information
+
+Texte :
+${text}
+`;
+
+    const response = await api.fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama3-70b-8192',
+        temperature: 0,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Erreur Groq getChargeExtractedData:', errorText);
+
+      return {
+        success: false,
+        message: `Erreur Groq: ${errorText}`,
+        result: ''
+      };
+    }
+
+    const data = await response.json();
+    const result = data?.choices?.[0]?.message?.content || '';
+
+    return {
+      success: true,
+      result
+    };
+  } catch (error) {
+    console.error('❌ getChargeExtractedData error:', error);
+    return {
+      success: false,
+      message: error.message,
+      result: ''
+    };
+  }
+});
+
+resolver.define('getExtractedAttachmentData', async ({ payload }) => {
+  try {
+    const { issueKey, attachmentId } = payload || {};
 
     if (!issueKey || !attachmentId) {
       return {
@@ -864,58 +1180,22 @@ resolver.define('getChargeExtractedData', async ({ payload }) => {
       };
     }
 
-    const storageKey = `charge-analysis-${issueKey}-${attachmentId}`;
-    const extractedData = await storage.get(storageKey);
+    const key = `charge-analysis-${issueKey}-${attachmentId}`;
+    const data = await kvs.get(key);
 
-    return {
-      success: true,
-      issueKey,
-      attachmentId,
-      extractedData: extractedData || null
-    };
-  } catch (error) {
-    console.error('Erreur getChargeExtractedData :', error);
-    return {
-      success: false,
-      message: error.message
-    };
-  }
-});
-
-resolver.define('markChargeAttachmentUploaded', async ({ payload }) => {
-  try {
-    const issueKey = payload?.issueKey || null;
-    const attachmentId = payload?.attachmentId || null;
-    const fileName = payload?.fileName || null;
-
-    if (!issueKey || !attachmentId || !fileName) {
+    if (!data) {
       return {
         success: false,
-        message: 'issueKey, attachmentId ou fileName manquant.'
+        message: 'Aucune donnée extraite.'
       };
     }
 
-    await queue.push({
-      body: {
-        action: 'analyze_attachment',
-        issueKey,
-        attachmentId,
-        fileName
-      }
-    });
-
     return {
       success: true,
-      message: 'Pièce jointe envoyée pour analyse automatique',
-      data: {
-        issueKey,
-        attachmentId,
-        fileName,
-        uploaded: true
-      }
+      data
     };
   } catch (error) {
-    console.error('Erreur markChargeAttachmentUploaded :', error);
+    console.error('Erreur getExtractedAttachmentData:', error);
     return {
       success: false,
       message: error.message
@@ -923,30 +1203,99 @@ resolver.define('markChargeAttachmentUploaded', async ({ payload }) => {
   }
 });
 
-resolver.define('getMissionAllDocuments', async ({ payload }) => {
+resolver.define('getMissionAttachmentAnalyses', async ({ payload }) => {
   try {
     const { issueKey } = payload || {};
+
+    console.log('📥 getMissionAttachmentAnalyses appelé avec issueKey =', issueKey);
 
     if (!issueKey) {
       return {
         success: false,
         message: 'issueKey manquant.',
-        attachments: []
+        analyses: []
       };
     }
 
-    const allDocuments = await getAllMissionDocuments(issueKey);
+    // Lire directement toutes les analyses stockées pour cette mission
+    const results = await kvs
+      .query()
+      .where('key', WhereConditions.beginsWith(`charge-analysis-${issueKey}-`))
+      .getMany();
+
+    console.log('📦 Résultats KVS bruts =', JSON.stringify(results));
+
+    const analyses = (results.results || []).map((item) => item.value);
+
+    console.log('✅ Analyses retournées =', JSON.stringify(analyses));
 
     return {
       success: true,
-      attachments: allDocuments
+      analyses
     };
   } catch (error) {
-    console.error('Erreur backend getMissionAllDocuments:', error);
+    console.error('❌ Erreur getMissionAttachmentAnalyses:', error);
     return {
       success: false,
-      message: `Erreur backend: ${error.message}`,
-      attachments: []
+      message: error.message,
+      analyses: []
+    };
+  }
+});
+/* =========================
+   Budget (stubs propres)
+========================= */
+
+resolver.define('calculateMissionBudget', async ({ payload }) => {
+  try {
+    const { missionId } = payload || {};
+
+    if (!missionId) {
+      return {
+        success: false,
+        message: 'missionId manquant.'
+      };
+    }
+
+    return {
+      success: true,
+      budget: {
+        missionId,
+        total: 0,
+        currency: 'MAD'
+      }
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+});
+
+resolver.define('getMissionBudget', async ({ payload }) => {
+  try {
+    const { missionId } = payload || {};
+
+    if (!missionId) {
+      return {
+        success: false,
+        message: 'missionId manquant.'
+      };
+    }
+
+    return {
+      success: true,
+      budget: {
+        missionId,
+        total: 0,
+        currency: 'MAD'
+      }
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message
     };
   }
 });
@@ -954,6 +1303,7 @@ resolver.define('getMissionAllDocuments', async ({ payload }) => {
 /* =========================
    PDF
 ========================= */
+
 const A4_PORTRAIT = { width: 595.28, height: 841.89 };
 const A4_LANDSCAPE = { width: 841.89, height: 595.28 };
 const PDF_MARGIN = 24;
@@ -1100,114 +1450,215 @@ resolver.define('generateMissionPdf', async ({ payload }) => {
     };
   }
 });
-
-resolver.define('updateMission', async ({ payload }) => {
+export const handleAttachmentCreatedTrigger = async (event) => {
   try {
-    const {
-      missionId,
-      nomEmploye,
-      prenomEmploye,
-      titre,
-      destination,
-      pays,
-      ville,
-      dateDepart,
-      dateRetour,
-      motif
-    } = payload || {};
+    console.log('📎 Trigger attachment created reçu =', JSON.stringify(event));
 
-    if (!missionId) {
+    // ✅ CORRECTION ICI
+    const attachment = event?.payload?.attachment || null;
+
+    if (!attachment?.id) {
+      console.log('❌ Aucun attachment.id trouvé dans payload');
+      return;
+    }
+
+    const attachmentId = attachment.id;
+
+    console.log('📎 Attachment ID =', attachmentId);
+
+    // récupérer détails
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/attachment/${attachmentId}`,
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' }
+      }
+    );
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error('❌ Erreur récupération attachment:', err);
+      return;
+    }
+
+    const data = await response.json();
+
+    const issueKey = data.issueKey;
+    const fileName = data.filename;
+    const mimeType = data.mimeType;
+
+    console.log('📄 Attachment récupéré =', {
+      issueKey,
+      fileName,
+      mimeType
+    });
+
+    if (!issueKey) {
+      console.log('❌ Pas de issueKey');
+      return;
+    }
+
+    await queue.push({
+      body: {
+        issueKey,
+        attachmentId,
+        fileName,
+        mimeType
+      }
+    });
+
+    console.log('✅ Envoyé dans la queue');
+  } catch (e) {
+    console.error('❌ Erreur trigger:', e);
+  }
+};
+resolver.define('scanMissionAttachmentsForAnalysis', async ({ payload }) => {
+  try {
+    const { issueKey } = payload || {};
+
+    if (!issueKey) {
       return {
         success: false,
-        message: 'missionId manquant.'
+        message: 'issueKey manquant.'
       };
     }
 
-    const mission = await storage.get(missionId);
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/issue/${issueKey}?fields=attachment`,
+      {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json'
+        }
+      }
+    );
 
-    if (!mission) {
+    if (!response.ok) {
+      const errorText = await response.text();
       return {
         success: false,
-        message: 'Mission introuvable.'
+        message: `Impossible de lire les attachments: ${errorText}`
       };
     }
 
-    const updatedMission = {
-      ...mission,
-      nomEmploye: nomEmploye ?? mission.nomEmploye,
-      prenomEmploye: prenomEmploye ?? mission.prenomEmploye,
-      titre: titre ?? mission.titre,
-      destination: destination ?? mission.destination,
-      pays: pays ?? mission.pays,
-      ville: ville ?? mission.ville,
-      dateDepart: dateDepart ?? mission.dateDepart,
-      dateRetour: dateRetour ?? mission.dateRetour,
-      motif: motif ?? mission.motif,
-      updatedAt: new Date().toISOString()
-    };
+    const data = await response.json();
+    const attachments = data.fields?.attachment || [];
 
-    if (updatedMission.dateRetour < updatedMission.dateDepart) {
-      return {
-        success: false,
-        message: 'La date de retour doit être après la date de départ.'
-      };
-    }
+    let queued = 0;
 
-    await storage.set(missionId, updatedMission);
+    for (const attachment of attachments) {
+      const key = `charge-analysis-${issueKey}-${attachment.id}`;
+      const existing = await kvs.get(key);
 
-    if (mission.issueKey) {
-      const jiraPayload = {
-        fields: {
-          summary: updatedMission.titre,
-          description: {
-            type: 'doc',
-            version: 1,
-            content: [
-              toAdfParagraph("Mission modifiée depuis l'application Forge"),
-              toAdfParagraph(`Employé: ${updatedMission.prenomEmploye} ${updatedMission.nomEmploye}`),
-              toAdfParagraph(`Destination: ${updatedMission.destination}`),
-              toAdfParagraph(`Pays: ${updatedMission.pays}`),
-              toAdfParagraph(`Ville: ${updatedMission.ville}`),
-              toAdfParagraph(`Date départ: ${updatedMission.dateDepart}`),
-              toAdfParagraph(`Date retour: ${updatedMission.dateRetour}`),
-              toAdfParagraph(`Motif: ${updatedMission.motif}`),
-              toAdfParagraph(`Créée par: ${mission.createdByName || 'Utilisateur'}`)
-            ]
+      if (!existing) {
+        await queue.push({
+          body: {
+            issueKey,
+            attachmentId: attachment.id,
+            fileName: attachment.filename || '',
+            mimeType: attachment.mimeType || ''
           }
-        }
-      };
-
-      const jiraResponse = await api.asApp().requestJira(
-        route`/rest/api/3/issue/${mission.issueKey}`,
-        {
-          method: 'PUT',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(jiraPayload)
-        }
-      );
-
-      if (!jiraResponse.ok) {
-        const errorText = await jiraResponse.text();
-        return {
-          success: false,
-          message: `Mission locale modifiée, mais échec mise à jour Jira: ${errorText}`
-        };
+        });
+        queued += 1;
       }
     }
 
     return {
       success: true,
-      message: 'Mission modifiée avec succès.',
-      mission: updatedMission
+      message: `${queued} fichier(s) envoyé(s) en analyse.`,
+      queued
     };
   } catch (error) {
-    console.error('Erreur backend updateMission:', error);
+    console.error('Erreur scanMissionAttachmentsForAnalysis:', error);
     return {
       success: false,
-      message: `Erreur backend: ${error.message}`
+      message: error.message
+    };
+  }
+});
+
+resolver.define('updateMissionAttachmentAnalysis', async ({ payload }) => {
+  try {
+    const { issueKey, attachmentId, fileName, category, date, amount, currency, details } = payload || {};
+
+    if (!issueKey || !attachmentId) {
+      return {
+        success: false,
+        message: 'issueKey ou attachmentId manquant.'
+      };
+    }
+
+    const key = `charge-analysis-${issueKey}-${attachmentId}`;
+
+    const existing = await kvs.get(key);
+
+    if (!existing) {
+      return {
+        success: false,
+        message: 'Analyse introuvable.'
+      };
+    }
+
+    const updatedValue = {
+      ...existing,
+      fileName: fileName ?? existing.fileName ?? '',
+      category: category ?? existing.category ?? '',
+      date: date ?? existing.date ?? '',
+      amount: amount ?? existing.amount ?? '',
+      currency: currency ?? existing.currency ?? '',
+      details: details ?? existing.details ?? '',
+      updatedAt: new Date().toISOString()
+    };
+
+    await kvs.set(key, updatedValue);
+
+    return {
+      success: true,
+      message: 'Analyse modifiée avec succès.',
+      analysis: updatedValue
+    };
+  } catch (error) {
+    console.error('updateMissionAttachmentAnalysis error:', error);
+    return {
+      success: false,
+      message: 'Erreur lors de la modification de l’analyse.'
+    };
+  }
+});
+
+resolver.define('deleteMissionAttachmentAnalysis', async ({ payload }) => {
+  try {
+    const { issueKey, attachmentId } = payload || {};
+
+    if (!issueKey || !attachmentId) {
+      return {
+        success: false,
+        message: 'issueKey ou attachmentId manquant.'
+      };
+    }
+
+    const key = `charge-analysis-${issueKey}-${attachmentId}`;
+
+    const existing = await kvs.get(key);
+
+    if (!existing) {
+      return {
+        success: false,
+        message: 'Analyse introuvable.'
+      };
+    }
+
+    await kvs.delete(key);
+
+    return {
+      success: true,
+      message: 'Analyse supprimée avec succès.'
+    };
+  } catch (error) {
+    console.error('deleteMissionAttachmentAnalysis error:', error);
+    return {
+      success: false,
+      message: 'Erreur lors de la suppression de l’analyse.'
     };
   }
 });

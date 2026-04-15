@@ -8,6 +8,7 @@ import {
 import { view } from '@forge/bridge';
 import MissionForm from './components/MissionForm';
 import MissionList from './components/MissionList';
+
 import MissionDetails from './components/MissionDetails';
 import {
   createMission,
@@ -16,6 +17,7 @@ import {
   getMissionById,
   deleteMission
 } from './services/missionService';
+import missionsData from './components/InfosExtraites'; 
 
 const App = () => {
   const [showForm, setShowForm] = useState(false);
@@ -114,8 +116,10 @@ const App = () => {
     if (isEditMode && selectedMission?.id) {
       response = await updateMission({
         missionId: selectedMission.id,
+        nomEmploye: data.nomEmploye,
+        prenomEmploye: data.prenomEmploye,
         titre: data.titre,
-        destination: data.ville,
+        destination: data.destination,
         pays: data.pays,
         ville: data.ville,
         dateDepart: data.dateDepart,
@@ -134,7 +138,11 @@ const App = () => {
     setIsError(!response.success);
 
     if (response.success) {
-      resetViewState();
+      setSelectedMission(null);
+      setShowDetails(false);
+      setShowForm(false);
+      setIsEditMode(false);
+
       await loadMissions(currentUser?.accountId);
     }
   } catch (error) {
@@ -142,7 +150,6 @@ const App = () => {
     setResultMessage(`Erreur frontend: ${error.message}`);
   }
 };
-
   const handleViewDetails = async (missionId) => {
     setResultMessage('');
     setIsError(false);
@@ -241,17 +248,17 @@ const App = () => {
           />
         )}
 
-        {!showForm && !showDetails && (
-          <MissionList
-            missions={missions}
-            loading={loadingMissions}
-            onViewDetails={handleViewDetails}
-            onCreateMission={handleOpenCreateForm}
-            onDeleteMission={handleDeleteMission}
-            onEditMission={handleEditMission}
-            userRole={userRole}
-          />
-        )}
+       {!showForm && !showDetails && (
+        <MissionList
+          missions={missions}
+          loading={loadingMissions}
+          onViewDetails={handleViewDetails}
+          onCreateMission={handleOpenCreateForm}
+          onDeleteMission={handleDeleteMission}
+          onEditMission={handleEditMission}
+          userRole={userRole}
+        />
+      )}
       </Stack>
     </Box>
   );

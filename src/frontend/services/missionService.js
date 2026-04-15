@@ -20,7 +20,6 @@ export const updateMission = async (data) => {
   return await invoke('updateMission', data);
 };
 
-
 export const updateMissionStatus = async (missionId, statut) => {
   return await invoke('updateMissionStatus', { missionId, statut });
 };
@@ -45,6 +44,10 @@ export const generateMissionPdf = async (issueKey) => {
   return await invoke('generateMissionPdf', { issueKey });
 };
 
+export const uploadAttachment = async (payload) => {
+  return await invoke('uploadAttachment', payload);
+};
+
 /* =========================
    CHARGES
 ========================= */
@@ -61,17 +64,19 @@ export const getMissionCharges = async (issueKey) => {
    IA / EXTRACTION
 ========================= */
 
-export const queueAttachmentAnalysis = async (data) => {
-  return await invoke('queueAttachmentAnalysis', data);
+export const getExtractedAttachmentData = async (issueKey, attachmentId) => {
+  return await invoke('getExtractedAttachmentData', {
+    issueKey,
+    attachmentId
+  });
 };
 
-export const getChargeExtractedData = async (issueKey, attachmentId) => {
-  return await invoke('getChargeExtractedData', { issueKey, attachmentId });
+export const getMissionAttachmentAnalyses = async (issueKey) => {
+  return await invoke('getMissionAttachmentAnalyses', {
+    issueKey
+  });
 };
 
-export const markChargeAttachmentUploaded = async (data) => {
-  return await invoke('markChargeAttachmentUploaded', data);
-};
 /* =========================
    BUDGET PREVISIONNEL
 ========================= */
@@ -82,4 +87,36 @@ export const calculateMissionBudget = async (missionId) => {
 
 export const getMissionBudget = async (missionId) => {
   return await invoke('getMissionBudget', { missionId });
+};
+
+/* =========================
+   HELPERS FRONT
+========================= */
+
+export const refreshMissionAnalysisData = async (issueKey) => {
+  const [documentsRes, chargesRes, analysesRes] = await Promise.all([
+    getMissionAllDocuments(issueKey),
+    getMissionCharges(issueKey),
+    getMissionAttachmentAnalyses(issueKey)
+  ]);
+
+  return {
+    documents: documentsRes?.success ? documentsRes.attachments || [] : [],
+    charges: chargesRes?.success ? chargesRes.charges || [] : [],
+    analyses: analysesRes?.success ? analysesRes.analyses || [] : []
+  };
+};
+
+export const scanMissionAttachmentsForAnalysis = async (issueKey) => {
+  return await invoke('scanMissionAttachmentsForAnalysis', { issueKey });
+};
+
+export const updateMissionAttachmentAnalysis = async (payload) => {
+  const response = await invoke('updateMissionAttachmentAnalysis', payload);
+  return response;
+};
+
+export const deleteMissionAttachmentAnalysis = async (payload) => {
+  const response = await invoke('deleteMissionAttachmentAnalysis', payload);
+  return response;
 };

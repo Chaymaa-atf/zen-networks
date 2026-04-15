@@ -10,15 +10,21 @@ import {
   Textfield,
   TextArea,
   Label,
-  Select
+  Select,
+  Frame
 } from '@forge/react';
 import { xcss } from '@forge/react';
-import { router } from '@forge/bridge';
+import { events,router } from '@forge/bridge';
 import {
   getMissionAllDocuments,
   getMissionCharges,
   createCharge,
-  generateMissionPdf
+  generateMissionPdf,
+  uploadAttachment,
+  getMissionAttachmentAnalyses,
+  scanMissionAttachmentsForAnalysis,
+  updateMissionAttachmentAnalysis,
+  deleteMissionAttachmentAnalysis
 } from '../services/missionService';
 
 /* ─────────────────────────────
@@ -81,7 +87,14 @@ const softBoxStyles = xcss({
   borderRadius: 'border.radius.200'
 });
 
-/* Tableau charges */
+const uploadPanelStyles = xcss({
+  backgroundColor: 'color.background.discovery',
+  borderRadius: 'border.radius.200',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderColor: 'color.border.discovery',
+  padding: 'space.200'
+});
 
 const tableWrapperStyles = xcss({
   borderWidth: 'border.width',
@@ -113,33 +126,18 @@ const tableLastRowStyles = xcss({
   paddingInline: 'space.150'
 });
 
-const colTypeStyles = xcss({
-  width: '14%'
-});
-
-const colDetailsStyles = xcss({
-  width: '26%'
-});
-
-const colDateStyles = xcss({
-  width: '18%'
-});
-
-const colMontantStyles = xcss({
-  width: '12%'
-});
-
-const colKeyStyles = xcss({
-  width: '10%'
-});
-
-const colActionsStyles = xcss({
-  width: '20%'
-});
+const colTypeStyles = xcss({ width: '14%' });
+const colDetailsStyles = xcss({ width: '26%' });
+const colDateStyles = xcss({ width: '18%' });
+const colMontantStyles = xcss({ width: '12%' });
+const colKeyStyles = xcss({ width: '10%' });
+const colActionsStyles = xcss({ width: '20%' });
 
 /* ─────────────────────────────
    Helpers
 ───────────────────────────── */
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getStatusAppearance = (statut) => {
   switch (statut?.toLowerCase()) {
@@ -265,9 +263,7 @@ const getChargeTableData = (charge) => {
     'Type hebergement'
   ]);
 
-  let typeTransport = getLineValueFlexible(lines, [
-    'Type transport'
-  ]);
+  let typeTransport = getLineValueFlexible(lines, ['Type transport']);
 
   const nomHebergement = getLineValueFlexible(lines, [
     'Nom hébergement',
@@ -304,34 +300,24 @@ const getChargeTableData = (charge) => {
   const normalizedSummary = normalizeText(summary);
 
   if (!typeHebergement) {
-    if (normalizedSummary.includes('hotel')) {
-      typeHebergement = 'Hôtel';
-    } else if (normalizedSummary.includes('airbnb')) {
-      typeHebergement = 'Airbnb';
-    } else if (normalizedSummary.includes('autre')) {
-      typeHebergement = 'Autre';
-    }
+    if (normalizedSummary.includes('hotel')) typeHebergement = 'Hôtel';
+    else if (normalizedSummary.includes('airbnb')) typeHebergement = 'Airbnb';
+    else if (normalizedSummary.includes('autre')) typeHebergement = 'Autre';
   }
 
   if (!typeTransport) {
-    if (normalizedSummary.includes('avion')) {
-      typeTransport = 'Avion';
-    } else if (normalizedSummary.includes('taxi') || normalizedSummary.includes('uber')) {
-      typeTransport = 'Taxi / Uber';
-    } else if (normalizedSummary.includes('voiture')) {
-      typeTransport = 'Voiture';
-    }
+    if (normalizedSummary.includes('avion')) typeTransport = 'Avion';
+    else if (normalizedSummary.includes('taxi') || normalizedSummary.includes('uber')) typeTransport = 'Taxi / Uber';
+    else if (normalizedSummary.includes('voiture')) typeTransport = 'Voiture';
   }
 
   let details = '—';
 
   if (nomHebergement || typeHebergement || ville) {
     const parts = [];
-
     if (typeHebergement) parts.push(typeHebergement);
     if (nomHebergement) parts.push(nomHebergement);
     if (ville) parts.push(ville);
-
     details = parts.join(' - ');
   } else if (restaurant) {
     details = restaurant;
@@ -354,13 +340,9 @@ const getChargeTableData = (charge) => {
   }
 
   let displayDate = '—';
-  if (dateDebut && dateFin) {
-    displayDate = `${dateDebut} → ${dateFin}`;
-  } else if (dateDebut) {
-    displayDate = dateDebut;
-  } else if (date) {
-    displayDate = date;
-  }
+  if (dateDebut && dateFin) displayDate = `${dateDebut} → ${dateFin}`;
+  else if (dateDebut) displayDate = dateDebut;
+  else if (date) displayDate = date;
 
   return {
     type: getChargeTypeFromSummary(summary),
@@ -377,6 +359,10 @@ const MissionDetails = ({ mission, onBack }) => {
 
   const [charges, setCharges] = useState([]);
   const [loadingCharges, setLoadingCharges] = useState(false);
+
+  const [attachmentAnalyses, setAttachmentAnalyses] = useState([]);
+  const [loadingAnalyses, setLoadingAnalyses] = useState(false);
+  const [waitingForAnalysis, setWaitingForAnalysis] = useState(false);
 
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
@@ -403,6 +389,24 @@ const MissionDetails = ({ mission, onBack }) => {
   });
 
   const [savingCharge, setSavingCharge] = useState(false);
+
+  const [editingAnalysisId, setEditingAnalysisId] = useState(null);
+  const [editingAnalysis, setEditingAnalysis] = useState({
+    fileName: '',
+    category: '',
+    date: '',
+    amount: '',
+    currency: '',
+    details: ''
+  });
+  const [savingAnalysis, setSavingAnalysis] = useState(false);
+  const [deletingAnalysisId, setDeletingAnalysisId] = useState(null);
+
+  const [uploadPanel, setUploadPanel] = useState({
+    open: false,
+    issueKey: '',
+    label: ''
+  });
 
   const getDurationDays = () => {
     if (!mission?.dateDepart || !mission?.dateRetour) return '—';
@@ -474,6 +478,40 @@ const MissionDetails = ({ mission, onBack }) => {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const openUploadPanelForIssue = (issueKey, label) => {
+    setUploadPanel({
+      open: true,
+      issueKey,
+      label
+    });
+  };
+
+  const closeUploadPanel = () => {
+    setUploadPanel({
+      open: false,
+      issueKey: '',
+      label: ''
+    });
+  };
+
+  const handleUploadForCharge = (chargeKey) => {
+    if (!chargeKey) {
+      window.alert('Sous-ticket introuvable.');
+      return;
+    }
+
+    openUploadPanelForIssue(chargeKey, `Sous-ticket ${chargeKey}`);
+  };
+
+  const handleUploadForMission = () => {
+    if (!mission?.issueKey) {
+      window.alert('Mission introuvable.');
+      return;
+    }
+
+    openUploadPanelForIssue(mission.issueKey, `Mission ${mission.issueKey}`);
   };
 
   const handleGeneratePdf = async () => {
@@ -560,6 +598,60 @@ const MissionDetails = ({ mission, onBack }) => {
       setCharges([]);
     } finally {
       setLoadingCharges(false);
+    }
+  };
+
+  const loadAttachmentAnalyses = async () => {
+    if (!mission?.issueKey) {
+      setAttachmentAnalyses([]);
+      return [];
+    }
+
+    try {
+      setLoadingAnalyses(true);
+
+      await scanMissionAttachmentsForAnalysis(mission.issueKey);
+
+      const res = await getMissionAttachmentAnalyses(mission.issueKey);
+      const analyses = res?.success ? res.analyses || [] : [];
+      setAttachmentAnalyses(analyses);
+      return analyses;
+    } catch (e) {
+      console.error(e);
+      setAttachmentAnalyses([]);
+      return [];
+    } finally {
+      setLoadingAnalyses(false);
+    }
+  };
+
+  const waitForAnalysesRefresh = async () => {
+    if (!mission?.issueKey) return false;
+
+    setWaitingForAnalysis(true);
+
+    try {
+      const maxAttempts = 8;
+      const delayMs = 2500;
+
+      for (let i = 0; i < maxAttempts; i += 1) {
+        const res = await getMissionAttachmentAnalyses(mission.issueKey);
+        const analyses = res?.success ? res.analyses || [] : [];
+
+        if (analyses.length > 0) {
+          setAttachmentAnalyses(analyses);
+          return true;
+        }
+
+        await sleep(delayMs);
+      }
+
+      return false;
+    } catch (e) {
+      console.error(e);
+      return false;
+    } finally {
+      setWaitingForAnalysis(false);
     }
   };
 
@@ -654,10 +746,6 @@ const MissionDetails = ({ mission, onBack }) => {
         window.alert(res.message || 'Charge créée avec succès.');
         closeChargeForm();
         await loadCharges();
-
-        if (res.chargeKey) {
-          await router.open(`/browse/${res.chargeKey}`);
-        }
       } else {
         window.alert(res?.message || "Erreur lors de l'ajout de la charge.");
       }
@@ -669,12 +757,107 @@ const MissionDetails = ({ mission, onBack }) => {
     }
   };
 
-  const handleUploadForCharge = async (chargeKey) => {
+  const startEditAnalysis = (item) => {
+    setEditingAnalysisId(item.attachmentId);
+    setEditingAnalysis({
+      fileName: item.fileName || '',
+      category: item.category || '',
+      date: item.date || '',
+      amount: item.amount || '',
+      currency: item.currency || '',
+      details: item.details || ''
+    });
+  };
+
+  const cancelEditAnalysis = () => {
+    setEditingAnalysisId(null);
+    setEditingAnalysis({
+      fileName: '',
+      category: '',
+      date: '',
+      amount: '',
+      currency: '',
+      details: ''
+    });
+  };
+
+  const updateEditingAnalysisField = (field, value) => {
+    setEditingAnalysis((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleSaveAnalysis = async (attachmentId) => {
     try {
-      await router.open(`/browse/${chargeKey}`);
+      if (!mission?.issueKey || !attachmentId) {
+        window.alert('Analyse introuvable.');
+        return;
+      }
+
+      setSavingAnalysis(true);
+
+      const res = await updateMissionAttachmentAnalysis({
+        issueKey: mission.issueKey,
+        attachmentId,
+        fileName: editingAnalysis.fileName,
+        category: editingAnalysis.category,
+        date: editingAnalysis.date,
+        amount: editingAnalysis.amount,
+        currency: editingAnalysis.currency,
+        details: editingAnalysis.details
+      });
+
+      if (!res?.success) {
+        window.alert(res?.message || 'Erreur lors de la modification.');
+        return;
+      }
+
+      await loadAttachmentAnalyses();
+      cancelEditAnalysis();
+      window.alert(res?.message || 'Analyse modifiée avec succès.');
     } catch (e) {
       console.error(e);
-      window.alert("Impossible d'ouvrir le ticket Jira.");
+      window.alert('Erreur lors de la modification.');
+    } finally {
+      setSavingAnalysis(false);
+    }
+  };
+
+  const handleDeleteAnalysis = async (attachmentId) => {
+    try {
+      if (!mission?.issueKey || !attachmentId) {
+        window.alert('Analyse introuvable.');
+        return;
+      }
+
+      const confirmed = window.confirm('Supprimer cette donnée extraite ?');
+      if (!confirmed) return;
+
+      setDeletingAnalysisId(attachmentId);
+
+      const res = await deleteMissionAttachmentAnalysis({
+        issueKey: mission.issueKey,
+        attachmentId
+      });
+
+      if (!res?.success) {
+        window.alert(res?.message || 'Erreur lors de la suppression.');
+        return;
+      }
+
+      await loadAttachmentAnalyses();
+
+      if (editingAnalysisId === attachmentId) {
+        cancelEditAnalysis();
+      }
+
+      window.alert(res?.message || 'Analyse supprimée avec succès.');
+    } catch (e) {
+      console.error(e);
+      window.alert('Erreur lors de la suppression.');
+    } finally {
+      setDeletingAnalysisId(null);
     }
   };
 
@@ -863,12 +1046,93 @@ const MissionDetails = ({ mission, onBack }) => {
     );
   };
 
+  const renderUploadPanel = () => {
+  if (!uploadPanel.open) return null;
+
+  return (
+    <Box xcss={uploadPanelStyles}>
+      <Stack space="space.150">
+        <Heading size="small">Ajouter une pièce jointe</Heading>
+        <Text>Cible : {uploadPanel.label}</Text>
+        <Frame resource="upload-frame" />
+      </Stack>
+    </Box>
+  );
+};
+
   useEffect(() => {
     if (!mission) return;
     loadAttachments();
     loadCharges();
+    loadAttachmentAnalyses();
   }, [mission?.issueKey, mission?.id]);
 
+  useEffect(() => {
+  let subscriptionRequest;
+  let subscriptionCancel;
+
+  const register = async () => {
+    subscriptionRequest = await events.on('ATTACHMENT_UPLOAD_REQUEST', async (payload) => {
+      try {
+        if (!uploadPanel.issueKey) {
+          await events.emit('ATTACHMENT_UPLOAD_ERROR', {
+            message: 'IssueKey introuvable.'
+          });
+          return;
+        }
+
+        const res = await uploadAttachment({
+          issueKey: uploadPanel.issueKey,
+          fileName: payload.fileName,
+          mimeType: payload.mimeType,
+          base64Content: payload.fileBase64
+        });
+
+        if (!res?.success) {
+          await events.emit('ATTACHMENT_UPLOAD_ERROR', {
+            message: res?.message || "Erreur lors de l'enregistrement."
+          });
+          return;
+        }
+
+        await loadAttachments();
+        await loadCharges();
+
+        const found = await waitForAnalysesRefresh();
+        if (!found) {
+          await loadAttachmentAnalyses();
+        }
+
+        closeUploadPanel();
+
+        await events.emit('ATTACHMENT_UPLOAD_SUCCESS', {
+          ok: true
+        });
+      } catch (error) {
+        console.error('Erreur upload depuis frame :', error);
+
+        await events.emit('ATTACHMENT_UPLOAD_ERROR', {
+          message: "Erreur lors de l'enregistrement."
+        });
+      }
+    });
+
+    subscriptionCancel = await events.on('ATTACHMENT_UPLOAD_CANCEL', async () => {
+      closeUploadPanel();
+    });
+  };
+
+  register();
+
+    return () => {
+      if (subscriptionRequest) {
+        subscriptionRequest.unsubscribe();
+      }
+      if (subscriptionCancel) {
+        subscriptionCancel.unsubscribe();
+      }
+    };
+}, [uploadPanel.issueKey, uploadPanel.open, mission?.issueKey]);
   if (!mission) {
     return <Text>Aucune mission sélectionnée.</Text>;
   }
@@ -925,9 +1189,9 @@ const MissionDetails = ({ mission, onBack }) => {
       </Inline>
 
       <Stack space="space.150">
-        <Box xcss={sectionHeaderStyles}>
-          <Heading size="small">Charges de mission</Heading>
-        </Box>
+  <Box xcss={sectionHeaderStyles}>
+    <Heading size="small">Charges de mission</Heading>
+  </Box>
 
         <Inline space="space.100">
           {CHARGE_TYPES.map(({ type, label, emoji }) => (
@@ -1041,7 +1305,7 @@ const MissionDetails = ({ mission, onBack }) => {
         )}
       </Stack>
 
-      <Stack space="space.150">
+          <Stack space="space.150">
         <Box xcss={sectionHeaderStyles}>
           <Inline spread="space-between" alignBlock="center">
             <Heading size="small">Documents de mission</Heading>
@@ -1055,12 +1319,18 @@ const MissionDetails = ({ mission, onBack }) => {
                 {generatingPdf ? 'Génération...' : '📄 Générer PDF'}
               </Button>
 
-              <Button appearance="primary" onClick={openJiraIssue} isDisabled={!mission.issueKey}>
+              <Button
+                appearance="primary"
+                onClick={handleUploadForMission}
+                isDisabled={!mission.issueKey}
+              >
                 + Ajouter document
               </Button>
             </Inline>
           </Inline>
         </Box>
+
+        {renderUploadPanel()}
 
         {loadingAttachments && (
           <Text color="color.text.subtlest">Chargement des documents...</Text>
@@ -1105,6 +1375,213 @@ const MissionDetails = ({ mission, onBack }) => {
               </Box>
             ))}
           </Stack>
+        )}
+      </Stack>
+
+      <Stack space="space.150">
+        <Box xcss={sectionHeaderStyles}>
+          <Inline spread="space-between" alignBlock="center">
+            <Heading size="small">Données extraites automatiquement</Heading>
+            <Button appearance="subtle" onClick={loadAttachmentAnalyses}>
+              Actualiser
+            </Button>
+          </Inline>
+        </Box>
+
+        {waitingForAnalysis && (
+          <Box xcss={softBoxStyles}>
+            <Text color="color.text.subtlest">
+              Analyse en cours... merci de patienter quelques secondes.
+            </Text>
+          </Box>
+        )}
+
+        {loadingAnalyses && (
+          <Text color="color.text.subtlest">Chargement des données extraites...</Text>
+        )}
+
+        {!loadingAnalyses && !waitingForAnalysis && attachmentAnalyses.length === 0 && (
+          <Box xcss={softBoxStyles}>
+            <Text color="color.text.subtlest">
+              Aucune donnée extraite disponible.
+            </Text>
+          </Box>
+        )}
+
+        {!loadingAnalyses && attachmentAnalyses.length > 0 && (
+          <Box xcss={tableWrapperStyles}>
+            <Box xcss={tableHeaderRowStyles}>
+              <Inline spread="space-between" alignBlock="center">
+                <Box xcss={xcss({ width: '16%' })}>
+                  <Text xcss={labelStyles}>FICHIER</Text>
+                </Box>
+
+                <Box xcss={xcss({ width: '12%' })}>
+                  <Text xcss={labelStyles}>TYPE</Text>
+                </Box>
+
+                <Box xcss={xcss({ width: '12%' })}>
+                  <Text xcss={labelStyles}>DATE</Text>
+                </Box>
+
+                <Box xcss={xcss({ width: '10%' })}>
+                  <Text xcss={labelStyles}>MONTANT</Text>
+                </Box>
+
+                <Box xcss={xcss({ width: '18%' })}>
+                  <Text xcss={labelStyles}>DÉTAILS</Text>
+                </Box>
+
+                <Box xcss={xcss({ width: '32%' })}>
+                  <Text xcss={labelStyles}>ACTIONS</Text>
+                </Box>
+              </Inline>
+            </Box>
+
+            {attachmentAnalyses.map((item, index) => {
+              const isLast = index === attachmentAnalyses.length - 1;
+              const isEditing = editingAnalysisId === item.attachmentId;
+
+              return (
+                <Box
+                  key={`${item.attachmentId}-${index}`}
+                  xcss={isLast ? tableLastRowStyles : tableRowStyles}
+                >
+                  {!isEditing ? (
+                    <Inline spread="space-between" alignBlock="start">
+                      <Box xcss={xcss({ width: '16%' })}>
+                        <Text>{item.fileName || '—'}</Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '12%' })}>
+                        <Text>{item.category || '—'}</Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '12%' })}>
+                        <Text>{item.date || '—'}</Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '10%' })}>
+                        <Text>
+                          {item.amount
+                            ? `${item.amount}${item.currency ? ` ${item.currency}` : ''}`
+                            : '—'}
+                        </Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '18%' })}>
+                        <Text>{item.details || '—'}</Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '32%' })}>
+                        <Inline space="space.050">
+                          <Button
+                            appearance="primary"
+                            onClick={() => startEditAnalysis(item)}
+                          >
+                            Modifier
+                          </Button>
+
+                          <Button
+                            appearance="danger"
+                            onClick={() => handleDeleteAnalysis(item.attachmentId)}
+                            isDisabled={deletingAnalysisId === item.attachmentId}
+                          >
+                            {deletingAnalysisId === item.attachmentId
+                              ? 'Suppression...'
+                              : 'Supprimer'}
+                          </Button>
+                        </Inline>
+                      </Box>
+                    </Inline>
+                  ) : (
+                    <Stack space="space.100">
+                      <Inline space="space.100" alignBlock="start">
+                        <Box xcss={xcss({ width: '16%' })}>
+                          <Label>Fichier</Label>
+                          <Textfield
+                            value={editingAnalysis.fileName}
+                            onChange={(e) =>
+                              updateEditingAnalysisField('fileName', e.target.value)
+                            }
+                          />
+                        </Box>
+
+                        <Box xcss={xcss({ width: '12%' })}>
+                          <Label>Type</Label>
+                          <Textfield
+                            value={editingAnalysis.category}
+                            onChange={(e) =>
+                              updateEditingAnalysisField('category', e.target.value)
+                            }
+                          />
+                        </Box>
+
+                        <Box xcss={xcss({ width: '12%' })}>
+                          <Label>Date</Label>
+                          <Textfield
+                            type="date"
+                            value={editingAnalysis.date}
+                            onChange={(e) =>
+                              updateEditingAnalysisField('date', e.target.value)
+                            }
+                          />
+                        </Box>
+
+                        <Box xcss={xcss({ width: '10%' })}>
+                          <Label>Montant</Label>
+                          <Textfield
+                            value={editingAnalysis.amount}
+                            onChange={(e) =>
+                              updateEditingAnalysisField('amount', e.target.value)
+                            }
+                          />
+                        </Box>
+
+                        <Box xcss={xcss({ width: '10%' })}>
+                          <Label>Devise</Label>
+                          <Textfield
+                            value={editingAnalysis.currency}
+                            onChange={(e) =>
+                              updateEditingAnalysisField('currency', e.target.value)
+                            }
+                          />
+                        </Box>
+                      </Inline>
+
+                      <Box>
+                        <Label>Détails</Label>
+                        <TextArea
+                          value={editingAnalysis.details}
+                          onChange={(e) =>
+                            updateEditingAnalysisField('details', e.target.value)
+                          }
+                        />
+                      </Box>
+
+                      <Inline space="space.100">
+                        <Button
+                          appearance="primary"
+                          onClick={() => handleSaveAnalysis(item.attachmentId)}
+                          isDisabled={savingAnalysis}
+                        >
+                          {savingAnalysis ? 'Enregistrement...' : 'Enregistrer'}
+                        </Button>
+
+                        <Button
+                          appearance="subtle"
+                          onClick={cancelEditAnalysis}
+                          isDisabled={savingAnalysis}
+                        >
+                          Annuler
+                        </Button>
+                      </Inline>
+                    </Stack>
+                  )}
+                </Box>
+              );
+            })}
+          </Box>
         )}
       </Stack>
 

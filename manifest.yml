@@ -9,21 +9,33 @@ modules:
         function: resolver
       route: gestion-test
 
+  trigger:
+    - key: jira-attachment-trigger
+      function: attach-trigger-fn
+      events:
+        - avi:jira:created:attachment
+
   function:
     - key: resolver
       handler: index.handler
 
-    - key: attachment-consumer-fn
+    - key: attach-trigger-fn
+      handler: index.handleAttachmentCreatedTrigger
+
+    - key: attach-consumer-fn
       handler: consumer.handler
 
   consumer:
     - key: attachment-analysis-consumer
       queue: attachment-analysis-queue
-      function: attachment-consumer-fn
+      function: attach-consumer-fn
 
 resources:
   - key: main
     path: src/frontend/index.jsx
+
+  - key: upload-frame
+    path: static/upload-frame/build
 
 app:
   id: ari:cloud:ecosystem::app/35bc0dd3-b8f7-40c4-a80d-32754e2ac778
@@ -35,7 +47,15 @@ permissions:
     - read:jira-work
     - write:jira-work
     - storage:app
+
+  content:
+    styles:
+      - 'unsafe-inline'
+    scripts:
+      - 'unsafe-inline'
+
   external:
     fetch:
       backend:
-        - https://api.openai.com
+        - address: "https://api.groq.com"
+        - address: "https://api.ocr.space"
