@@ -40,7 +40,7 @@ resources:
 app:
   id: ari:cloud:ecosystem::app/35bc0dd3-b8f7-40c4-a80d-32754e2ac778
   runtime:
-    name: nodejs20.x
+    name: nodejs22.x
 
 permissions:
   scopes:

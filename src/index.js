@@ -1217,24 +1217,48 @@ resolver.define('getMissionAttachmentAnalyses', async ({ payload }) => {
       };
     }
 
-    // Lire directement toutes les analyses stockées pour cette mission
-    const results = await kvs
-      .query()
-      .where('key', WhereConditions.beginsWith(`charge-analysis-${issueKey}-`))
-      .getMany();
+    // 1) Récupérer la mission principale + ses sous-tickets
+    const issueResp = await api.asApp().requestJira(
+      route`/rest/api/3/issue/${issueKey}?fields=subtasks`
+    );
 
-    console.log('📦 Résultats KVS bruts =', JSON.stringify(results));
+    const issueData = await issueResp.json();
 
-    const analyses = (results.results || []).map((item) => item.value);
+    const issueKeys = [
+      issueKey,
+      ...(issueData.fields?.subtasks || []).map((subtask) => subtask.key)
+    ];
 
-    console.log('✅ Analyses retournées =', JSON.stringify(analyses));
+    console.log('🎯 Tickets à vérifier =', JSON.stringify(issueKeys));
+
+    // 2) Chercher les analyses KVS pour la mission + tous les sous-tickets
+    const allAnalyses = [];
+
+    for (const key of issueKeys) {
+      const results = await kvs
+        .query()
+        .where('key', WhereConditions.beginsWith(`charge-analysis-${key}-`))
+        .getMany();
+
+      console.log(`📦 Résultats KVS pour ${key} =`, JSON.stringify(results));
+
+      const analyses = (results.results || []).map((item) => ({
+        ...item.value,
+        sourceIssueKey: key
+      }));
+
+      allAnalyses.push(...analyses);
+    }
+
+    console.log('✅ Toutes les analyses retournées =', JSON.stringify(allAnalyses));
 
     return {
       success: true,
-      analyses
+      analyses: allAnalyses
     };
   } catch (error) {
     console.error('❌ Erreur getMissionAttachmentAnalyses:', error);
+
     return {
       success: false,
       message: error.message,
@@ -1452,21 +1476,17 @@ resolver.define('generateMissionPdf', async ({ payload }) => {
 });
 export const handleAttachmentCreatedTrigger = async (event) => {
   try {
-    console.log('📎 Trigger attachment created reçu =', JSON.stringify(event));
+    console.log('📎 Trigger reçu =', JSON.stringify(event));
 
-    // ✅ CORRECTION ICI
-    const attachment = event?.payload?.attachment || null;
+    const attachment = event?.payload?.attachment;
 
     if (!attachment?.id) {
-      console.log('❌ Aucun attachment.id trouvé dans payload');
+      console.log('❌ attachment.id introuvable');
       return;
     }
 
     const attachmentId = attachment.id;
 
-    console.log('📎 Attachment ID =', attachmentId);
-
-    // récupérer détails
     const response = await api.asApp().requestJira(
       route`/rest/api/3/attachment/${attachmentId}`,
       {
@@ -1476,25 +1496,26 @@ export const handleAttachmentCreatedTrigger = async (event) => {
     );
 
     if (!response.ok) {
-      const err = await response.text();
-      console.error('❌ Erreur récupération attachment:', err);
+      console.error('❌ Erreur lecture attachment');
       return;
     }
 
     const data = await response.json();
 
-    const issueKey = data.issueKey;
-    const fileName = data.filename;
-    const mimeType = data.mimeType;
+    console.log('📄 DATA attachment =', JSON.stringify(data));
 
-    console.log('📄 Attachment récupéré =', {
-      issueKey,
-      fileName,
-      mimeType
-    });
+    // ✅ IMPORTANT
+    const issueKey =
+      data.issueKey ||
+      data?.issue?.key ||
+      data?.issue?.fields?.key ||
+      '';
+
+    const fileName = data.filename || '';
+    const mimeType = data.mimeType || '';
 
     if (!issueKey) {
-      console.log('❌ Pas de issueKey');
+      console.log('❌ issueKey introuvable');
       return;
     }
 
@@ -1507,11 +1528,12 @@ export const handleAttachmentCreatedTrigger = async (event) => {
       }
     });
 
-    console.log('✅ Envoyé dans la queue');
-  } catch (e) {
-    console.error('❌ Erreur trigger:', e);
+    console.log(`✅ Analyse envoyée pour ${issueKey}`);
+  } catch (error) {
+    console.error('❌ Trigger error:', error);
   }
 };
+
 resolver.define('scanMissionAttachmentsForAnalysis', async ({ payload }) => {
   try {
     const { issueKey } = payload || {};
@@ -1519,47 +1541,35 @@ resolver.define('scanMissionAttachmentsForAnalysis', async ({ payload }) => {
     if (!issueKey) {
       return {
         success: false,
-        message: 'issueKey manquant.'
+        message: 'issueKey manquant.',
+        queued: 0
       };
     }
 
-    const response = await api.asApp().requestJira(
-      route`/rest/api/3/issue/${issueKey}?fields=attachment`,
-      {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json'
-        }
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return {
-        success: false,
-        message: `Impossible de lire les attachments: ${errorText}`
-      };
-    }
-
-    const data = await response.json();
-    const attachments = data.fields?.attachment || [];
+    // ✅ Important : mission principale + sous-tickets
+    const documents = await getAllMissionDocuments(issueKey);
 
     let queued = 0;
 
-    for (const attachment of attachments) {
-      const key = `charge-analysis-${issueKey}-${attachment.id}`;
+    for (const attachment of documents) {
+      const sourceIssueKey = attachment.sourceIssueKey || issueKey;
+
+      const key = `charge-analysis-${sourceIssueKey}-${attachment.id}`;
       const existing = await kvs.get(key);
 
       if (!existing) {
         await queue.push({
           body: {
-            issueKey,
+            issueKey: sourceIssueKey,
             attachmentId: attachment.id,
             fileName: attachment.filename || '',
             mimeType: attachment.mimeType || ''
           }
         });
+
         queued += 1;
+
+        console.log(`📤 Analyse envoyée : ${sourceIssueKey} - ${attachment.filename}`);
       }
     }
 
@@ -1570,9 +1580,11 @@ resolver.define('scanMissionAttachmentsForAnalysis', async ({ payload }) => {
     };
   } catch (error) {
     console.error('Erreur scanMissionAttachmentsForAnalysis:', error);
+
     return {
       success: false,
-      message: error.message
+      message: error.message,
+      queued: 0
     };
   }
 });
