@@ -7,10 +7,19 @@ import FormData from 'form-data';
 const resolver = new Resolver();
 const queue = new Queue({ key: 'attachment-analysis-queue' });
 
-const ADMIN_IDS = ['ID_ADMIN_1'];
 
 // À adapter selon ton projet Jira
 const PROJECT_KEY = 'FOR';
+const getAppConfigOrDefault = async () => {
+  const config = await kvs.get('app-config');
+
+  return {
+    configured: !!config?.configured,
+    projectKey: config?.projectKey || PROJECT_KEY,
+    projectName: config?.projectName || 'Gestion des missions',
+    adminIds: config?.adminIds || []
+  };
+};
 const ISSUE_TYPE_NAME = 'Task';
 const SUBTASK_ISSUE_TYPE_NAME = 'Sous-tâche';
 
@@ -367,11 +376,11 @@ resolver.define('createMission', async ({ payload }) => {
         message: 'La date de retour doit être après la date de départ.'
       };
     }
-
+    const config = await getAppConfigOrDefault();
     const jiraPayload = {
       fields: {
-        project: {
-          key: PROJECT_KEY
+       project: {
+          key: config.projectKey
         },
         issuetype: {
           name: ISSUE_TYPE_NAME
@@ -465,25 +474,31 @@ resolver.define('getMissions', async ({ payload }) => {
 
     const missions = (results.results || []).map((item) => item.value);
 
-    const isAdmin = ADMIN_IDS.includes(userId);
+    const config = await getAppConfigOrDefault();
+    const isAdmin = config.adminIds.includes(userId);
 
     const filteredMissions = isAdmin
       ? missions
       : missions.filter((mission) => mission.createdBy === userId);
 
-    filteredMissions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    filteredMissions.sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
 
     return {
       success: true,
       missions: filteredMissions,
-      role: isAdmin ? 'admin' : 'employe'
+      role: isAdmin ? 'admin' : 'employe',
+      projectKey: config.projectKey
     };
   } catch (error) {
     console.error('Erreur backend getMissions:', error);
+
     return {
       success: false,
       message: `Erreur backend: ${error.message}`,
-      missions: []
+      missions: [],
+      role: 'employe'
     };
   }
 });
@@ -977,12 +992,12 @@ resolver.define('createCharge', async ({ payload }) => {
         charge: existingCharge
       };
     }
-
+    const config = await getAppConfigOrDefault();
     const jiraPayload = {
       fields: {
         project: {
-          key: PROJECT_KEY
-        },
+            key: config.projectKey
+          },
         issuetype: {
           name: SUBTASK_ISSUE_TYPE_NAME
         },
@@ -1217,10 +1232,14 @@ resolver.define('getMissionAttachmentAnalyses', async ({ payload }) => {
       };
     }
 
-    // 1) Récupérer la mission principale + ses sous-tickets
     const issueResp = await api.asApp().requestJira(
       route`/rest/api/3/issue/${issueKey}?fields=subtasks`
     );
+
+    if (!issueResp.ok) {
+      const errorText = await issueResp.text();
+      throw new Error(errorText);
+    }
 
     const issueData = await issueResp.json();
 
@@ -1231,21 +1250,35 @@ resolver.define('getMissionAttachmentAnalyses', async ({ payload }) => {
 
     console.log('🎯 Tickets à vérifier =', JSON.stringify(issueKeys));
 
-    // 2) Chercher les analyses KVS pour la mission + tous les sous-tickets
     const allAnalyses = [];
 
-    for (const key of issueKeys) {
+    for (const currentIssueKey of issueKeys) {
       const results = await kvs
         .query()
-        .where('key', WhereConditions.beginsWith(`charge-analysis-${key}-`))
+        .where('key', WhereConditions.beginsWith(`charge-analysis-${currentIssueKey}-`))
         .getMany();
 
-      console.log(`📦 Résultats KVS pour ${key} =`, JSON.stringify(results));
+      const analyses = (results.results || []).map((item) => {
+        const value = item.value || {};
 
-      const analyses = (results.results || []).map((item) => ({
-        ...item.value,
-        sourceIssueKey: key
-      }));
+        return {
+          ...value,
+
+          // clé exacte KVS
+          analysisKey: item.key,
+
+          // ticket où la pièce jointe existe
+          sourceIssueKey: currentIssueKey,
+
+          // mission principale pour calcul total
+          missionIssueKey: issueKey,
+
+          // sécurité
+          amount: value.amount || value.montant || '',
+          currency: value.currency || value.devise || 'MAD',
+          category: value.category || value.type || 'inconnu'
+        };
+      });
 
       allAnalyses.push(...analyses);
     }
@@ -1675,4 +1708,322 @@ resolver.define('deleteMissionAttachmentAnalysis', async ({ payload }) => {
   }
 });
 
+resolver.define('getAppConfig', async () => {
+  try {
+    const config = await kvs.get('app-config');
+
+    return {
+      success: true,
+      configured: !!config?.configured,
+      config: config || null
+    };
+  } catch (error) {
+    return {
+      success: false,
+      configured: false,
+      config: null,
+      message: error.message
+    };
+  }
+});
+
+resolver.define('saveAppConfig', async ({ payload, context }) => {
+  try {
+    const {
+      mode,
+      projectKey,
+      projectName
+    } = payload || {};
+
+    if (!mode) {
+      return {
+        success: false,
+        message: 'Veuillez choisir une option.'
+      };
+    }
+
+    if (mode === 'existing' && !projectKey) {
+      return {
+        success: false,
+        message: 'Veuillez saisir la clé du projet Jira.'
+      };
+    }
+
+    const finalProjectKey = mode === 'existing'
+      ? projectKey.toUpperCase()
+      : `MIS${Date.now().toString().slice(-4)}`;
+
+    const finalProjectName = mode === 'existing'
+      ? projectName || projectKey.toUpperCase()
+      : projectName || 'Gestion des missions';
+
+    const config = {
+      configured: true,
+      mode,
+      projectKey: finalProjectKey,
+      projectName: finalProjectName,
+      adminIds: [context.accountId],
+      createdAt: new Date().toISOString()
+    };
+
+    await kvs.set('app-config', config);
+
+    return {
+      success: true,
+      message: 'Configuration enregistrée avec succès.',
+      config
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+});
+const isCurrentUserAdmin = async (accountId) => {
+  const config = await kvs.get('app-config');
+  const adminIds = config?.adminIds || [];
+
+  return {
+    config,
+    isAdmin: adminIds.includes(accountId)
+  };
+};
+
+resolver.define('getAdminUsers', async ({ context }) => {
+  try {
+    const { config, isAdmin } = await isCurrentUserAdmin(context.accountId);
+
+    if (!isAdmin) {
+      return {
+        success: false,
+        message: 'Accès refusé. Réservé aux administrateurs.',
+        admins: []
+      };
+    }
+
+    const adminIds = config?.adminIds || [];
+    const admins = [];
+
+    for (const accountId of adminIds) {
+      const response = await api.asApp().requestJira(
+        route`/rest/api/3/user?accountId=${accountId}`,
+        {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json'
+          }
+        }
+      );
+
+      if (response.ok) {
+        const user = await response.json();
+
+        admins.push({
+          accountId,
+          displayName: user.displayName || accountId,
+          emailAddress: user.emailAddress || '',
+          avatarUrl: user.avatarUrls?.['48x48'] || ''
+        });
+      } else {
+        admins.push({
+          accountId,
+          displayName: accountId,
+          emailAddress: '',
+          avatarUrl: ''
+        });
+      }
+    }
+
+    return {
+      success: true,
+      admins
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message,
+      admins: []
+    };
+  }
+});
+
+resolver.define('addAdminUser', async ({ payload, context }) => {
+  try {
+    const { newAdminId } = payload || {};
+
+    if (!newAdminId) {
+      return {
+        success: false,
+        message: 'Account ID obligatoire.'
+      };
+    }
+
+    const { config, isAdmin } = await isCurrentUserAdmin(context.accountId);
+
+    if (!isAdmin) {
+      return {
+        success: false,
+        message: 'Accès refusé. Réservé aux administrateurs.'
+      };
+    }
+
+    const adminIds = config?.adminIds || [];
+
+    if (adminIds.includes(newAdminId)) {
+      return {
+        success: false,
+        message: 'Cet utilisateur est déjà administrateur.'
+      };
+    }
+
+    const updatedConfig = {
+      ...config,
+      adminIds: [...adminIds, newAdminId],
+      updatedAt: new Date().toISOString()
+    };
+
+    await kvs.set('app-config', updatedConfig);
+
+    return {
+      success: true,
+      message: 'Administrateur ajouté avec succès.',
+      admins: updatedConfig.adminIds
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+});
+
+resolver.define('removeAdminUser', async ({ payload, context }) => {
+  try {
+    const { adminId } = payload || {};
+
+    if (!adminId) {
+      return {
+        success: false,
+        message: 'Account ID obligatoire.'
+      };
+    }
+
+    const { config, isAdmin } = await isCurrentUserAdmin(context.accountId);
+
+    if (!isAdmin) {
+      return {
+        success: false,
+        message: 'Accès refusé. Réservé aux administrateurs.'
+      };
+    }
+
+    const adminIds = config?.adminIds || [];
+
+    if (adminIds.length <= 1) {
+      return {
+        success: false,
+        message: 'Impossible de supprimer le dernier administrateur.'
+      };
+    }
+
+    const updatedConfig = {
+      ...config,
+      adminIds: adminIds.filter((id) => id !== adminId),
+      updatedAt: new Date().toISOString()
+    };
+
+    await kvs.set('app-config', updatedConfig);
+
+    return {
+      success: true,
+      message: 'Administrateur supprimé avec succès.',
+      admins: updatedConfig.adminIds
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+});
+resolver.define('searchJiraUsersForAdmin', async ({ payload, context }) => {
+  try {
+    const { query } = payload || {};
+
+    if (!query || query.trim().length < 2) {
+      return {
+        success: false,
+        message: 'Saisir au moins 2 caractères.',
+        users: []
+      };
+    }
+
+    const { config, isAdmin } = await isCurrentUserAdmin(context.accountId);
+
+    if (!isAdmin) {
+      return {
+        success: false,
+        message: 'Accès refusé. Réservé aux administrateurs.',
+        users: []
+      };
+    }
+
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/users/search?query=${query}`,
+      {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        success: false,
+        message: errorText,
+        users: []
+      };
+    }
+
+    const data = await response.json();
+
+  const q = String(query || '').toLowerCase().trim();
+
+const users = (data || [])
+  .filter((user) => {
+    const name = String(user.displayName || '').toLowerCase();
+
+    return (
+      user.accountType === 'atlassian' &&
+      user.active === true &&
+      name.includes(q) &&
+      !name.includes('jira') &&
+      !name.includes('automation') &&
+      !name.includes('assist') &&
+      !name.includes('app')
+    );
+  })
+  .map((user) => ({
+    accountId: user.accountId,
+    displayName: user.displayName,
+    emailAddress: user.emailAddress || '',
+    avatarUrl: user.avatarUrls?.['48x48'] || ''
+  }))
+  .slice(0, 10);
+
+    return {
+      success: true,
+      users
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message,
+      users: []
+    };
+  }
+});
 export const handler = resolver.getDefinitions();

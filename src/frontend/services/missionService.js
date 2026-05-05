@@ -120,3 +120,24 @@ export const deleteMissionAttachmentAnalysis = async (payload) => {
   const response = await invoke('deleteMissionAttachmentAnalysis', payload);
   return response;
 };
+export const getAppConfig = async () => {
+  return await invoke('getAppConfig');
+};
+
+export const saveAppConfig = async (payload) => {
+  return await invoke('saveAppConfig', payload);
+};
+export const getAdminUsers = async () => {
+  return await invoke('getAdminUsers');
+};
+
+export const addAdminUser = async (newAdminId) => {
+  return await invoke('addAdminUser', { newAdminId });
+};
+
+export const removeAdminUser = async (adminId) => {
+  return await invoke('removeAdminUser', { adminId });
+};
+export const searchJiraUsersForAdmin = async (query) => {
+  return await invoke('searchJiraUsersForAdmin', { query });
+};

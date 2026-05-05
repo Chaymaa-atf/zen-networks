@@ -8,6 +8,15 @@ modules:
       resolver:
         function: resolver
       route: gestion-test
+      pages:
+        - title: Statistiques
+          route: statistics
+        - title: Missions
+          route: missions
+        - title: Données extraites
+          route: extracted
+        - title: Gestion des rôles
+          route: roles
 
   trigger:
     - key: jira-attachment-trigger
@@ -36,6 +45,9 @@ resources:
 
   - key: upload-frame
     path: static/upload-frame/build
+    
+  - key: stats-frame
+    path: static/stats/dist
 
 app:
   id: ari:cloud:ecosystem::app/35bc0dd3-b8f7-40c4-a80d-32754e2ac778
@@ -47,6 +59,8 @@ permissions:
     - read:jira-work
     - write:jira-work
     - storage:app
+    - read:jira-user
+    - read:account
 
   content:
     styles:
