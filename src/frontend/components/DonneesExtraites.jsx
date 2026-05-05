@@ -53,18 +53,21 @@ const DonneesExtraites = ({ missions = [], analyses = [] }) => {
 
   /* 🔍 enrich data (mission + employé) */
   const enriched = useMemo(() => {
-    return analyses.map(a => {
-      const mission = missions.find(m =>
-        m.id === a.missionId || m.issueKey === a.issueKey
-      );
+  return analyses.map(a => {
+    const mission = missions.find(m =>
+      m.issueKey === a.missionIssueKey ||
+      m.issueKey === a.issueKey ||
+      m.issueKey === a.sourceIssueKey ||
+      m.id === a.missionId
+    );
 
-      return {
-        ...a,
-        missionName: mission?.titre || '—',
-        employee: `${mission?.prenomEmploye || ''} ${mission?.nomEmploye || ''}`.trim() || '—'
-      };
-    });
-  }, [analyses, missions]);
+    return {
+      ...a,
+      missionName: mission?.titre || '—',
+      employee: `${mission?.prenomEmploye || ''} ${mission?.nomEmploye || ''}`.trim() || '—'
+    };
+  });
+}, [analyses, missions]);
 
   /* 🔎 filtre */
   const filtered = useMemo(() => {
