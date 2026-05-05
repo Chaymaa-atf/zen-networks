@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { view } from '@forge/bridge';
+import { view, events } from '@forge/bridge';
 import {
   PieChart,
   Pie,
@@ -58,15 +58,29 @@ function App() {
   const [analyses, setAnalyses] = useState([]);
   const [selectedMissionKey, setSelectedMissionKey] = useState('');
 
-  useEffect(() => {
-    const load = async () => {
-      const context = await view.getContext();
+ useEffect(() => {
+  const load = async () => {
+    const context = await view.getContext();
 
-      const missionsData =
-        context?.extension?.resourceContext?.missions || [];
+    const resourceContext =
+      context?.extension?.resourceContext ||
+      context?.resourceContext ||
+      {};
 
-      const analysesData =
-        context?.extension?.resourceContext?.analyses || [];
+    const missionsData = resourceContext.missions || [];
+    const analysesData = resourceContext.analyses || [];
+
+    if (missionsData.length > 0) {
+      setMissions(missionsData);
+      setAnalyses(analysesData);
+      setSelectedMissionKey(missionsData[0].issueKey);
+    }
+  };
+
+  const listen = async () => {
+    const sub = await events.on('STATS_DATA', (data) => {
+      const missionsData = data?.missions || [];
+      const analysesData = data?.analyses || [];
 
       setMissions(missionsData);
       setAnalyses(analysesData);
@@ -74,10 +88,23 @@ function App() {
       if (missionsData.length > 0) {
         setSelectedMissionKey(missionsData[0].issueKey);
       }
-    };
+    });
 
-    load();
-  }, []);
+    return sub;
+  };
+
+  let subscription;
+
+  load();
+
+  listen().then((sub) => {
+    subscription = sub;
+  });
+
+  return () => {
+    if (subscription) subscription.unsubscribe();
+  };
+}, []);
 
   const selectedMission = missions.find(
     (m) => m.issueKey === selectedMissionKey
