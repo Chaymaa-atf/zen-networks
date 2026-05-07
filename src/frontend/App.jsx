@@ -23,7 +23,8 @@ import {
   deleteMission,
   getAppConfig,
   getStatsData,
-  getMissionAttachmentAnalyses
+  getMissionAttachmentAnalyses,
+  updateMissionStatus
 } from './services/missionService';
 
 const App = () => {
@@ -314,7 +315,27 @@ const App = () => {
       setResultMessage(`Erreur frontend: ${error.message}`);
     }
   };
+const handleUpdateStatus = async (missionId, newStatus) => {
+  try {
+    setMissions((prev) =>
+      prev.map((mission) =>
+        mission.id === missionId
+          ? { ...mission, statut: newStatus }
+          : mission
+      )
+    );
 
+    const response = await updateMissionStatus(missionId, newStatus);
+
+    if (!response.success) {
+      setIsError(true);
+      setResultMessage(response.message || 'Erreur mise à jour statut');
+    }
+  } catch (error) {
+    setIsError(true);
+    setResultMessage(error.message);
+  }
+};
   const handleBackToList = async () => {
     resetViewState();
 
@@ -365,7 +386,7 @@ const App = () => {
         )}
 
         {currentPage === 'missions' && !showForm && !showDetails && (
-          <MissionList
+        <MissionList
             missions={missions}
             charges={analyses || []}
             loading={loadingMissions}

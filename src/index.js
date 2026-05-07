@@ -537,44 +537,20 @@ resolver.define('getMissionById', async ({ payload }) => {
 });
 
 resolver.define('updateMissionStatus', async ({ payload }) => {
-  try {
-    const { missionId, statut } = payload || {};
+  const { missionId, statut } = payload;
 
-    if (!missionId || !statut) {
-      return {
-        success: false,
-        message: 'missionId ou statut manquant.'
-      };
-    }
+  const mission = await storage.get(`mission-${missionId}`);
 
-    const mission = await kvs.get(missionId);
-
-    if (!mission) {
-      return {
-        success: false,
-        message: 'Mission introuvable.'
-      };
-    }
-
-    const updatedMission = {
-      ...mission,
-      statut
-    };
-
-    await kvs.set(missionId, updatedMission);
-
-    return {
-      success: true,
-      message: 'Statut mis à jour avec succès.',
-      mission: updatedMission
-    };
-  } catch (error) {
-    console.error('Erreur backend updateMissionStatus:', error);
-    return {
-      success: false,
-      message: `Erreur backend: ${error.message}`
-    };
+  if (!mission) {
+    return { success: false, error: 'Mission introuvable' };
   }
+
+  await storage.set(`mission-${missionId}`, {
+    ...mission,
+    statut,
+  });
+
+  return { success: true };
 });
 
 resolver.define('deleteMission', async ({ payload }) => {
@@ -2026,4 +2002,5 @@ const users = (data || [])
     };
   }
 });
+
 export const handler = resolver.getDefinitions();
