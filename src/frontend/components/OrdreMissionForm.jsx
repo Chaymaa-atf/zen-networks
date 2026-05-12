@@ -11,8 +11,8 @@ import {
   Textfield
 } from '@forge/react';
 import { xcss } from '@forge/react';
-
 import { generateOrdreMissionPdf } from '../services/missionService';
+import logo from '../assets/logo.png';
 
 const cardStyles = xcss({
   borderWidth: 'border.width',
@@ -207,15 +207,27 @@ const OrdreMissionForm = ({ mission, analyses = [], onBack }) => {
 
     window.URL.revokeObjectURL(url);
   };
+const getLogoBase64 = async () => {
+  const response = await fetch(logo);
+  const blob = await response.blob();
 
+  return await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+    reader.readAsDataURL(blob);
+  });
+};
   const handleGenerate = async () => {
     try {
       setGenerating(true);
 
-      const res = await generateOrdreMissionPdf({
+     const logoBase64 = await getLogoBase64();
+
+        const res = await generateOrdreMissionPdf({
         missionId: mission.id,
-        ordreData: form
-      });
+        ordreData: form,
+        logoBase64
+        });
 
       if (!res?.success) {
         window.alert(res?.message || 'Erreur génération ordre de mission.');
@@ -326,12 +338,15 @@ const OrdreMissionForm = ({ mission, analyses = [], onBack }) => {
         </Button>
 
         <Button
-          appearance="subtle"
-          onClick={onBack}
-          isDisabled={generating}
-        >
-          Annuler
-        </Button>
+            appearance="subtle"
+            onClick={() => {
+                if (onBack) {
+                onBack();
+                }
+            }}
+            >
+            ← Retour
+            </Button>
       </Inline>
     </Stack>
   );

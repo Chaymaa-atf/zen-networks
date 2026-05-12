@@ -9,8 +9,9 @@ import {
   Select,
   Textfield
 } from '@forge/react';
-
 import { xcss } from '@forge/react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const sectionStyles = xcss({
   borderWidth: 'border.width',
@@ -371,7 +372,115 @@ const DonneesExtraites = ({ missions = [], analyses = [] }) => {
       );
     });
   };
+const generatePdfTable = () => {
+  if (!filtered || filtered.length === 0) {
+    alert('Aucune donnée à générer');
+    return;
+  }
 
+  const doc = new jsPDF('landscape');
+
+  const total = filtered.reduce((sum, item) => {
+    return sum + parseAmountToDH(item);
+  }, 0);
+
+  // ===== TITRE =====
+  doc.setFontSize(18);
+  doc.text('Tableau des données extraites', 14, 15);
+
+  // ===== INFOS =====
+  doc.setFontSize(10);
+
+  doc.text(
+    `Nombre de lignes : ${filtered.length}`,
+    14,
+    25
+  );
+
+  doc.text(
+    `Total général : ${total.toFixed(2)} DH`,
+    14,
+    32
+  );
+
+  // ===== FILTRES =====
+  let filtres = [];
+
+  if (missionFilter && missionFilter.value !== 'all') {
+    filtres.push(`Mission : ${missionFilter.label}`);
+  }
+
+  if (employeeFilter && employeeFilter.value !== 'all') {
+    filtres.push(`Employé : ${employeeFilter.label}`);
+  }
+
+  if (typeFilter && typeFilter.value !== 'all') {
+    filtres.push(`Type : ${typeFilter.label}`);
+  }
+
+  if (monthFilter && monthFilter.value !== 'all') {
+    filtres.push(`Mois : ${monthFilter.label}`);
+  }
+
+  if (dateDebut) {
+    filtres.push(`Du : ${dateDebut}`);
+  }
+
+  if (dateFin) {
+    filtres.push(`Au : ${dateFin}`);
+  }
+
+  if (filtres.length > 0) {
+    doc.text(
+      `Filtres : ${filtres.join(' | ')}`,
+      14,
+      39
+    );
+  }
+
+  // ===== TABLE =====
+  const rows = filtered.map(item => [
+    item.missionName || '—',
+    item.employee || '—',
+    item.category || '—',
+    item.date || '—',
+
+    item.amount
+      ? `${item.amount} ${item.currency || item.devise || 'DH'}`
+      : '—',
+
+    `${parseAmountToDH(item).toFixed(2)} DH`,
+
+    item.details || '—'
+  ]);
+
+  autoTable(doc, {
+    startY: 48,
+
+    head: [[
+      'Mission',
+      'Employé',
+      'Type',
+      'Date',
+      'Montant',
+      'Montant DH',
+      'Détails'
+    ]],
+
+    body: rows,
+
+    styles: {
+      fontSize: 8,
+      cellPadding: 2
+    },
+
+    headStyles: {
+      fillColor: [30, 30, 30]
+    }
+  });
+
+  doc.save('donnees-extraites.pdf');
+};
   return (
     <Stack space="space.400">
       <Heading size="large">
@@ -408,7 +517,20 @@ const DonneesExtraites = ({ missions = [], analyses = [] }) => {
             placeholder="Mois"
           />
 
-          <Button appearance="primary">Filtrer</Button>
+          <Inline space="space.100">
+
+          <Button appearance="primary">
+            Filtrer
+          </Button>
+
+          <Button
+            appearance="warning"
+            onClick={generatePdfTable}
+          >
+            Générer PDF
+          </Button>
+
+        </Inline>
 
           <Button
             appearance="subtle"

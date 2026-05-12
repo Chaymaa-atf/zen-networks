@@ -1,10 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Box,
-  SectionMessage,
-  Stack,
-  Text
-} from '@forge/react';
+import { Box, SectionMessage, Stack, Text } from '@forge/react';
 import { view } from '@forge/bridge';
 
 import MissionForm from './components/MissionForm';
@@ -15,6 +10,7 @@ import Parametres from './components/Parametres';
 import DonneesExtraites from './components/DonneesExtraites';
 import Statistiques from './components/Statistiques';
 import OrdreMissionForm from './components/OrdreMissionForm';
+
 import {
   createMission,
   updateMission,
@@ -33,13 +29,14 @@ const App = () => {
   const [currentPage, setCurrentPage] = useState('missions');
   const [checkingConfig, setCheckingConfig] = useState(true);
   const [appConfig, setAppConfig] = useState(null);
-  const [showOrdreForm, setShowOrdreForm] = useState(false);
+
   const [missions, setMissions] = useState([]);
   const [analyses, setAnalyses] = useState([]);
   const [loadingMissions, setLoadingMissions] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [showOrdreForm, setShowOrdreForm] = useState(false);
   const [selectedMission, setSelectedMission] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
 
@@ -52,23 +49,18 @@ const App = () => {
   const resetViewState = () => {
     setShowForm(false);
     setShowDetails(false);
+    setShowOrdreForm(false);
     setSelectedMission(null);
     setIsEditMode(false);
-    setShowOrdreForm(false);
   };
 
   const updatePageFromPath = (path) => {
     const pathText = String(path || '');
 
-    if (pathText.includes('settings')) {
-      setCurrentPage('settings');
-    } else if (pathText.includes('extracted')) {
-      setCurrentPage('extracted');
-    } else if (pathText.includes('statistics')) {
-      setCurrentPage('statistics');
-    } else {
-      setCurrentPage('missions');
-    }
+    if (pathText.includes('settings')) setCurrentPage('settings');
+    else if (pathText.includes('extracted')) setCurrentPage('extracted');
+    else if (pathText.includes('statistics')) setCurrentPage('statistics');
+    else setCurrentPage('missions');
 
     resetViewState();
     setResultMessage('');
@@ -78,18 +70,17 @@ const App = () => {
   const getConnectedUser = async () => {
     const context = await view.getContext();
 
-    const accountId =
-      context?.accountId ||
-      context?.extension?.accountId ||
-      context?.extension?.principal?.accountId ||
-      '';
-
-    const displayName =
-      context?.displayName ||
-      context?.extension?.principal?.displayName ||
-      'Utilisateur';
-
-    return { accountId, displayName };
+    return {
+      accountId:
+        context?.accountId ||
+        context?.extension?.accountId ||
+        context?.extension?.principal?.accountId ||
+        '',
+      displayName:
+        context?.displayName ||
+        context?.extension?.principal?.displayName ||
+        'Utilisateur'
+    };
   };
 
   const loadStatsData = async () => {
@@ -109,51 +100,51 @@ const App = () => {
   };
 
   const loadMissions = async (userId) => {
-  try {
-    setLoadingMissions(true);
+    try {
+      setLoadingMissions(true);
 
-    const response = await getMissions(userId);
+      const response = await getMissions(userId);
 
-    if (response.success) {
-      const missionsList = response.missions || [];
+      if (response.success) {
+        const missionsList = response.missions || [];
 
-      setMissions(missionsList);
-      setUserRole(response.role || 'employe');
+        setMissions(missionsList);
+        setUserRole(response.role || 'employe');
 
-      const allAnalyses = [];
+        const allAnalyses = [];
 
-      for (const mission of missionsList) {
-        if (!mission.issueKey) continue;
+        for (const mission of missionsList) {
+          if (!mission.issueKey) continue;
 
-        const res = await getMissionAttachmentAnalyses(mission.issueKey);
+          const res = await getMissionAttachmentAnalyses(mission.issueKey);
 
-        if (res.success) {
-          allAnalyses.push(
-            ...(res.analyses || []).map((a) => ({
-              ...a,
-              missionIssueKey: mission.issueKey
-            }))
-          );
+          if (res.success) {
+            allAnalyses.push(
+              ...(res.analyses || []).map((a) => ({
+                ...a,
+                missionIssueKey: mission.issueKey
+              }))
+            );
+          }
         }
-      }
 
-      console.log('🔥 ANALYSES POUR TOTAL =', allAnalyses);
-      setAnalyses(allAnalyses);
-    } else {
+        setAnalyses(allAnalyses);
+      } else {
+        setMissions([]);
+        setAnalyses([]);
+        setIsError(true);
+        setResultMessage(response.message || 'Erreur lors du chargement des missions.');
+      }
+    } catch (error) {
       setMissions([]);
       setAnalyses([]);
       setIsError(true);
-      setResultMessage(response.message || 'Erreur lors du chargement des missions.');
+      setResultMessage(`Erreur frontend: ${error.message}`);
+    } finally {
+      setLoadingMissions(false);
     }
-  } catch (error) {
-    setMissions([]);
-    setAnalyses([]);
-    setIsError(true);
-    setResultMessage(`Erreur frontend: ${error.message}`);
-  } finally {
-    setLoadingMissions(false);
-  }
-};
+  };
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -203,14 +194,9 @@ const App = () => {
     setAppConfig(config);
     setCheckingConfig(false);
 
-    try {
-      const user = await getConnectedUser();
-      setCurrentUser(user);
-      await loadMissions(user.accountId);
-    } catch (error) {
-      setIsError(true);
-      setResultMessage(`Erreur après configuration: ${error.message}`);
-    }
+    const user = await getConnectedUser();
+    setCurrentUser(user);
+    await loadMissions(user.accountId);
   };
 
   const handleOpenCreateForm = () => {
@@ -225,20 +211,14 @@ const App = () => {
     setIsError(false);
 
     try {
-      let response;
-
-      if (isEditMode && selectedMission?.id) {
-        response = await updateMission({
-          missionId: selectedMission.id,
-          ...data
-        });
-      } else {
-        response = await createMission({
-          ...data,
-          createdBy: currentUser?.accountId,
-          createdByName: currentUser?.displayName
-        });
-      }
+      const response =
+        isEditMode && selectedMission?.id
+          ? await updateMission({ missionId: selectedMission.id, ...data })
+          : await createMission({
+              ...data,
+              createdBy: currentUser?.accountId,
+              createdByName: currentUser?.displayName
+            });
 
       setResultMessage(response.message || '');
       setIsError(!response.success);
@@ -257,20 +237,15 @@ const App = () => {
     setResultMessage('');
     setIsError(false);
 
-    try {
-      const response = await getMissionById(missionId);
+    const response = await getMissionById(missionId);
 
-      if (response.success) {
-        resetViewState();
-        setSelectedMission(response.mission);
-        setShowDetails(true);
-      } else {
-        setIsError(true);
-        setResultMessage(response.message || 'Impossible de charger le détail.');
-      }
-    } catch (error) {
+    if (response.success) {
+      resetViewState();
+      setSelectedMission(response.mission);
+      setShowDetails(true);
+    } else {
       setIsError(true);
-      setResultMessage(`Erreur frontend: ${error.message}`);
+      setResultMessage(response.message || 'Impossible de charger le détail.');
     }
   };
 
@@ -278,51 +253,36 @@ const App = () => {
     setResultMessage('');
     setIsError(false);
 
-    try {
-      const response = await getMissionById(missionId);
+    const response = await getMissionById(missionId);
 
-      if (response.success) {
-        resetViewState();
-        setSelectedMission(response.mission);
-        setIsEditMode(true);
-        setShowForm(true);
-      } else {
-        setIsError(true);
-        setResultMessage(response.message || 'Impossible de charger la mission à modifier.');
-      }
-    } catch (error) {
+    if (response.success) {
+      resetViewState();
+      setSelectedMission(response.mission);
+      setIsEditMode(true);
+      setShowForm(true);
+    } else {
       setIsError(true);
-      setResultMessage(`Erreur frontend: ${error.message}`);
+      setResultMessage(response.message || 'Impossible de charger la mission à modifier.');
     }
   };
 
   const handleDeleteMission = async (missionId) => {
     if (!window.confirm('Confirmer la suppression de cette mission ?')) return;
 
-    setResultMessage('');
-    setIsError(false);
+    const response = await deleteMission(missionId);
 
-    try {
-      const response = await deleteMission(missionId);
+    setResultMessage(response.message || '');
+    setIsError(!response.success);
 
-      setResultMessage(response.message || '');
-      setIsError(!response.success);
-
-      if (response.success) {
-        await loadMissions(currentUser?.accountId);
-      }
-    } catch (error) {
-      setIsError(true);
-      setResultMessage(`Erreur frontend: ${error.message}`);
+    if (response.success) {
+      await loadMissions(currentUser?.accountId);
     }
   };
-const handleUpdateStatus = async (missionId, newStatus) => {
-  try {
+
+  const handleUpdateStatus = async (missionId, newStatus) => {
     setMissions((prev) =>
       prev.map((mission) =>
-        mission.id === missionId
-          ? { ...mission, statut: newStatus }
-          : mission
+        mission.id === missionId ? { ...mission, statut: newStatus } : mission
       )
     );
 
@@ -332,16 +292,12 @@ const handleUpdateStatus = async (missionId, newStatus) => {
       setIsError(true);
       setResultMessage(response.message || 'Erreur mise à jour statut');
     }
-  } catch (error) {
-    setIsError(true);
-    setResultMessage(error.message);
-  }
-};
-const handlePrepareOrdreMission = async (missionId) => {
-  setResultMessage('');
-  setIsError(false);
+  };
 
-  try {
+  const handlePrepareOrdreMission = async (missionId) => {
+    setResultMessage('');
+    setIsError(false);
+
     const response = await getMissionById(missionId);
 
     if (response.success) {
@@ -352,26 +308,21 @@ const handlePrepareOrdreMission = async (missionId) => {
       setIsError(true);
       setResultMessage(response.message || 'Impossible de charger la mission.');
     }
-  } catch (error) {
-    setIsError(true);
-    setResultMessage(`Erreur frontend: ${error.message}`);
-  }
-};
-  const handleBackToList = async () => {
-    resetViewState();
-
-    if (currentUser?.accountId) {
-      await loadMissions(currentUser.accountId);
-    }
   };
 
-  if (checkingConfig) {
-    return <Text>Chargement de la configuration...</Text>;
-  }
+  const handleBackToList = () => {
+    setShowForm(false);
+    setShowDetails(false);
+    setShowOrdreForm(false);
+    setSelectedMission(null);
+    setIsEditMode(false);
+    setResultMessage('');
+    setIsError(false);
+  };
 
-  if (!appConfig) {
-    return <AppConfiguration onConfigured={handleConfigured} />;
-  }
+  if (checkingConfig) return <Text>Chargement de la configuration...</Text>;
+
+  if (!appConfig) return <AppConfiguration onConfigured={handleConfigured} />;
 
   return (
     <Box>
@@ -402,38 +353,35 @@ const handlePrepareOrdreMission = async (missionId) => {
           />
         )}
 
-        {currentPage === 'missions' && showOrdreForm && (
-        <OrdreMissionForm
-          mission={selectedMission}
-          analyses={analyses || []}
-          onBack={handleBackToList}
-        />
-      )}
+        {currentPage === 'missions' && showOrdreForm && selectedMission && (
+          <OrdreMissionForm
+            mission={selectedMission}
+            analyses={analyses || []}
+            onBack={handleBackToList}
+          />
+        )}
 
-    {currentPage === 'missions' && showDetails && !showOrdreForm && (
-      <MissionDetails
-        mission={selectedMission}
-        onBack={handleBackToList}
-      />
-    )}
+        {currentPage === 'missions' && showDetails && selectedMission && !showOrdreForm && (
+          <MissionDetails mission={selectedMission} onBack={handleBackToList} />
+        )}
 
-    {currentPage === 'missions' &&
-      !showForm &&
-      !showDetails &&
-      !showOrdreForm && (
-        <MissionList
-          missions={missions}
-          charges={analyses || []}
-          loading={loadingMissions}
-          userRole={userRole}
-          onViewDetails={handleViewDetails}
-          onCreateMission={handleOpenCreateForm}
-          onDeleteMission={handleDeleteMission}
-          onEditMission={handleEditMission}
-          onUpdateStatus={handleUpdateStatus}
-          onPrepareOrdre={handlePrepareOrdreMission}
-        />
-    )}
+        {currentPage === 'missions' &&
+          !showForm &&
+          !showDetails &&
+          !showOrdreForm && (
+            <MissionList
+              missions={missions}
+              charges={analyses || []}
+              loading={loadingMissions}
+              userRole={userRole}
+              onViewDetails={handleViewDetails}
+              onCreateMission={handleOpenCreateForm}
+              onDeleteMission={handleDeleteMission}
+              onEditMission={handleEditMission}
+              onUpdateStatus={handleUpdateStatus}
+              onPrepareOrdre={handlePrepareOrdreMission}
+            />
+          )}
       </Stack>
     </Box>
   );

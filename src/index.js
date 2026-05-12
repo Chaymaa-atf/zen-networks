@@ -2152,10 +2152,26 @@ resolver.define('generateOrdreMissionPdf', async ({ payload }) => {
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595.28, 841.89]);
 
+    /* =========================
+       LOGO
+    ========================= */
+
+      if (payload.logoBase64) {
+      const logoBytes = Buffer.from(payload.logoBase64, 'base64');
+      const logoImage = await pdfDoc.embedPng(logoBytes);
+
+      page.drawImage(logoImage, {
+        x: 70,
+        y: 720,
+        width: 80,
+        height: 55
+      });
+    }
+
     const font = await pdfDoc.embedFont('Helvetica');
     const boldFont = await pdfDoc.embedFont('Helvetica-Bold');
 
-    let y = 790;
+    let y = 710;
 
     const drawText = (text, x = 70, size = 10, bold = false) => {
       page.drawText(String(text || ''), {
@@ -2164,6 +2180,7 @@ resolver.define('generateOrdreMissionPdf', async ({ payload }) => {
         size,
         font: bold ? boldFont : font
       });
+
       y -= size + 7;
     };
 
@@ -2180,17 +2197,30 @@ resolver.define('generateOrdreMissionPdf', async ({ payload }) => {
         .filter(Boolean);
 
       if (lines.length === 0) {
-        drawText(`- ${emptyText}`, 70, 10, true);
+        drawText(`- ${emptyText}`, 70, 10, false);
         return;
       }
 
       lines.forEach((line) => {
-        drawText(`- ${line}`, 70, 10, true);
+        drawText(`• ${line}`, 70, 10, false);
       });
     };
 
-    const year = new Date().getFullYear();
-    const ordreNumber = `OM/${year}/${String(Date.now()).slice(-3)}`;
+   const currentYear = new Date().getFullYear();
+
+const counterKey = `ordre-counter-${currentYear}`;
+
+let counter = await kvs.get(counterKey);
+
+if (!counter) {
+  counter = 1;
+} else {
+  counter += 1;
+}
+
+await kvs.set(counterKey, counter);
+
+const ordreNumber = `OM/${currentYear}/${String(counter).padStart(3, '0')}`;
 
     drawText(config.companyName, 70, 16, true);
 
@@ -2215,40 +2245,120 @@ resolver.define('generateOrdreMissionPdf', async ({ payload }) => {
       }`,
       70,
       10,
-      true
+      false
     );
-    drawText(`Fonction : ${ordreData.fonction || 'Collaborateur'}`, 70, 10, true);
-    drawText(`CIN : ${ordreData.cin || '-'}`, 70, 10, true);
+
+    drawText(
+      `Fonction : ${ordreData.fonction || 'Collaborateur'}`,
+      70,
+      10,
+      false
+    );
+
+    drawText(
+      `CIN : ${ordreData.cin || '-'}`,
+      70,
+      10,
+      false
+    );
 
     drawTitle('OBJET DE LA MISSION');
 
-    drawText(`Nature de la mission : ${ordreData.natureMission || mission.titre || '-'}`, 70, 10, true);
-    drawText(`Lieu de la mission : ${ordreData.lieuMission || mission.ville || '-'}`, 70, 10, true);
-    drawText(`Pays : ${ordreData.pays || mission.pays || mission.destination || '-'}`, 70, 10, true);
+    drawText(
+      `Nature de la mission : ${
+        ordreData.natureMission || mission.titre || '-'
+      }`,
+      70,
+      10,
+      false
+    );
+
+    drawText(
+      `Lieu de la mission : ${
+        ordreData.lieuMission || mission.ville || '-'
+      }`,
+      70,
+      10,
+      false
+    );
+
+    drawText(
+      `Pays : ${
+        ordreData.pays || mission.pays || mission.destination || '-'
+      }`,
+      70,
+      10,
+      false
+    );
 
     drawTitle('DUREE DE LA MISSION');
 
-    drawText(`Date de depart : ${ordreData.dateDepart || mission.dateDepart || '-'}`, 70, 10, true);
-    drawText(`Date de retour : ${ordreData.dateRetour || mission.dateRetour || '-'}`, 70, 10, true);
-    drawText(`Duree totale : ${ordreData.duree || '-'}`, 70, 10, true);
+    drawText(
+      `Date de depart : ${
+        ordreData.dateDepart || mission.dateDepart || '-'
+      }`,
+      70,
+      10,
+      false
+    );
+
+    drawText(
+      `Date de retour : ${
+        ordreData.dateRetour || mission.dateRetour || '-'
+      }`,
+      70,
+      10,
+      false
+    );
+
+    drawText(
+      `Duree totale : ${ordreData.duree || '-'}`,
+      70,
+      10,
+      false
+    );
 
     drawTitle('MOYENS DE TRANSPORT');
-    drawLines(ordreData.transports, 'Aucun transport');
+
+    drawLines(
+      ordreData.transports,
+      'Aucun transport'
+    );
 
     drawTitle('FRAIS DE MISSION');
 
     drawText('Hebergement', 70, 10, true);
-    drawLines(ordreData.hebergements, 'Aucun hebergement');
+
+    drawLines(
+      ordreData.hebergements,
+      'Aucun hebergement'
+    );
 
     drawText('Restauration', 70, 10, true);
-    drawLines(ordreData.restaurants, 'Aucun remboursement');
+
+    drawLines(
+      ordreData.restaurants,
+      'Aucun remboursement'
+    );
 
     y = 85;
 
-    drawText(`${config.companyName} - SARL - Tel : ${config.phone} - Email: ${config.email}`, 70, 8, true);
-    drawText(`RC ${config.rc} - CNSS ${config.cnss} - IF ${config.ifNumber} - Patente ${config.patente} - ICE ${config.ice}`, 70, 8, true);
+    drawText(
+      `${config.companyName} - SARL - Tel : ${config.phone} - Email: ${config.email}`,
+      70,
+      8,
+      true
+    );
+
+    drawText(
+      `RC ${config.rc} - CNSS ${config.cnss} - IF ${config.ifNumber} - Patente ${config.patente} - ICE ${config.ice}`,
+      70,
+      8,
+      true
+    );
 
     const pdfBytes = await pdfDoc.save();
+
     const pdfBase64 = Buffer.from(pdfBytes).toString('base64');
 
     return {
@@ -2258,6 +2368,7 @@ resolver.define('generateOrdreMissionPdf', async ({ payload }) => {
     };
   } catch (error) {
     console.error('Erreur generateOrdreMissionPdf:', error);
+
     return {
       success: false,
       message: error.message
