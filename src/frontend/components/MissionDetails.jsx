@@ -14,7 +14,8 @@ import {
   Frame
 } from '@forge/react';
 import { xcss } from '@forge/react';
-import { events,router } from '@forge/bridge';
+import { events, router } from '@forge/bridge';
+
 import {
   getMissionAllDocuments,
   getMissionCharges,
@@ -24,7 +25,8 @@ import {
   getMissionAttachmentAnalyses,
   scanMissionAttachmentsForAnalysis,
   updateMissionAttachmentAnalysis,
-  deleteMissionAttachmentAnalysis
+  deleteMissionAttachmentAnalysis,
+  createManualChargeAnalysis
 } from '../services/missionService';
 
 /* ─────────────────────────────
@@ -368,6 +370,7 @@ const MissionDetails = ({ mission, onBack }) => {
 
   const [selectedChargeType, setSelectedChargeType] = useState(null);
   const [showChargeForm, setShowChargeForm] = useState(false);
+  const [chargeCreationMode, setChargeCreationMode] = useState(null);
 
   const [chargeForm, setChargeForm] = useState({
     typeHebergement: null,
@@ -399,6 +402,7 @@ const MissionDetails = ({ mission, onBack }) => {
     currency: '',
     details: ''
   });
+
   const [savingAnalysis, setSavingAnalysis] = useState(false);
   const [deletingAnalysisId, setDeletingAnalysisId] = useState(null);
 
@@ -452,13 +456,17 @@ const MissionDetails = ({ mission, onBack }) => {
 
   const openChargeForm = (type) => {
     setSelectedChargeType(type);
+    setChargeCreationMode(null);
+    setShowChargeForm(false);
+    closeUploadPanel();
     resetChargeForm();
-    setShowChargeForm(true);
   };
 
   const closeChargeForm = () => {
     setShowChargeForm(false);
     setSelectedChargeType(null);
+    setChargeCreationMode(null);
+    closeUploadPanel();
     resetChargeForm();
   };
 
@@ -496,6 +504,27 @@ const MissionDetails = ({ mission, onBack }) => {
     });
   };
 
+  const chooseWithDocument = () => {
+    if (!mission?.issueKey) {
+      window.alert('Mission introuvable.');
+      return;
+    }
+
+    setChargeCreationMode('with_document');
+    setShowChargeForm(false);
+
+    openUploadPanelForIssue(
+      mission.issueKey,
+      `${getChargeLabelFront(selectedChargeType)} - ${mission.issueKey}`
+    );
+  };
+
+  const chooseWithoutDocument = () => {
+    setChargeCreationMode('without_document');
+    setShowChargeForm(true);
+    closeUploadPanel();
+  };
+
   const handleUploadForCharge = (chargeKey) => {
     if (!chargeKey) {
       window.alert('Sous-ticket introuvable.');
@@ -511,6 +540,9 @@ const MissionDetails = ({ mission, onBack }) => {
       return;
     }
 
+    setSelectedChargeType(null);
+    setChargeCreationMode(null);
+    setShowChargeForm(false);
     openUploadPanelForIssue(mission.issueKey, `Mission ${mission.issueKey}`);
   };
 
@@ -601,6 +633,18 @@ const MissionDetails = ({ mission, onBack }) => {
     }
   };
 
+  const removeDuplicateAnalyses = (analyses = []) => {
+    return Array.from(
+      new Map(
+        analyses.map((item) => [
+          item.analysisKey ||
+            `${item.sourceIssueKey || ''}-${item.attachmentId || ''}-${item.fileName || ''}-${item.date || ''}-${item.amount || ''}`,
+          item
+        ])
+      ).values()
+    );
+  };
+
   const loadAttachmentAnalyses = async () => {
     if (!mission?.issueKey) {
       setAttachmentAnalyses([]);
@@ -613,7 +657,8 @@ const MissionDetails = ({ mission, onBack }) => {
       await scanMissionAttachmentsForAnalysis(mission.issueKey);
 
       const res = await getMissionAttachmentAnalyses(mission.issueKey);
-      const analyses = res?.success ? res.analyses || [] : [];
+      const analyses = res?.success ? removeDuplicateAnalyses(res.analyses || []) : [];
+
       setAttachmentAnalyses(analyses);
       return analyses;
     } catch (e) {
@@ -636,7 +681,7 @@ const MissionDetails = ({ mission, onBack }) => {
 
       for (let i = 0; i < maxAttempts; i += 1) {
         const res = await getMissionAttachmentAnalyses(mission.issueKey);
-        const analyses = res?.success ? res.analyses || [] : [];
+        const analyses = res?.success ? removeDuplicateAnalyses(res.analyses || []) : [];
 
         if (analyses.length > 0) {
           setAttachmentAnalyses(analyses);
@@ -717,6 +762,52 @@ const MissionDetails = ({ mission, onBack }) => {
     return null;
   };
 
+  const getManualAnalysisData = () => {
+    if (selectedChargeType === 'hebergement') {
+      return {
+        date: chargeForm.dateDebut,
+        amount: chargeForm.montant,
+        currency: 'MAD',
+        details: `${chargeForm.typeHebergement?.label || ''} - ${chargeForm.nomHotel || ''} - ${chargeForm.ville || ''}`
+      };
+    }
+
+    if (selectedChargeType === 'restaurant') {
+      return {
+        date: chargeForm.date,
+        amount: chargeForm.montant,
+        currency: 'MAD',
+        details: chargeForm.fournisseur
+      };
+    }
+
+    if (selectedChargeType === 'transport') {
+      let details = chargeForm.typeTransport?.label || 'Transport';
+
+      if (chargeForm.typeTransport?.value === 'avion') {
+        details = `Avion - ${chargeForm.villeDepart || ''} - ${chargeForm.villeArrivee || ''} - ${chargeForm.compagnie || ''}`;
+      }
+
+      if (chargeForm.typeTransport?.value === 'voiture') {
+        details = `Voiture - ${chargeForm.typeVehicule || ''} - ${chargeForm.kilometrage || ''} km`;
+      }
+
+      return {
+        date: chargeForm.date,
+        amount: chargeForm.montant,
+        currency: 'MAD',
+        details
+      };
+    }
+
+    return {
+      date: '',
+      amount: '',
+      currency: 'MAD',
+      details: ''
+    };
+  };
+
   const handleSaveCharge = async () => {
     try {
       if (!mission?.issueKey) {
@@ -743,9 +834,25 @@ const MissionDetails = ({ mission, onBack }) => {
       const res = await createCharge(payload);
 
       if (res?.success) {
+        const manualData = getManualAnalysisData();
+
+        await createManualChargeAnalysis({
+          issueKey: mission.issueKey,
+          chargeKey: res.chargeKey,
+          type: selectedChargeType,
+          fileName: 'Saisie manuelle',
+          date: manualData.date,
+          amount: manualData.amount,
+          currency: manualData.currency,
+          details: manualData.details
+        });
+
         window.alert(res.message || 'Charge créée avec succès.');
+
         closeChargeForm();
+
         await loadCharges();
+        await loadAttachmentAnalyses();
       } else {
         window.alert(res?.message || "Erreur lors de l'ajout de la charge.");
       }
@@ -758,7 +865,7 @@ const MissionDetails = ({ mission, onBack }) => {
   };
 
   const startEditAnalysis = (item) => {
-    setEditingAnalysisId(item.attachmentId);
+    setEditingAnalysisId(item.analysisKey || item.attachmentId);
     setEditingAnalysis({
       fileName: item.fileName || '',
       category: item.category || '',
@@ -788,9 +895,9 @@ const MissionDetails = ({ mission, onBack }) => {
     }));
   };
 
-  const handleSaveAnalysis = async (attachmentId) => {
+  const handleSaveAnalysis = async (item) => {
     try {
-      if (!mission?.issueKey || !attachmentId) {
+      if (!item?.attachmentId) {
         window.alert('Analyse introuvable.');
         return;
       }
@@ -798,8 +905,8 @@ const MissionDetails = ({ mission, onBack }) => {
       setSavingAnalysis(true);
 
       const res = await updateMissionAttachmentAnalysis({
-        issueKey: mission.issueKey,
-        attachmentId,
+        issueKey: item.sourceIssueKey || mission.issueKey,
+        attachmentId: item.attachmentId,
         fileName: editingAnalysis.fileName,
         category: editingAnalysis.category,
         date: editingAnalysis.date,
@@ -824,9 +931,9 @@ const MissionDetails = ({ mission, onBack }) => {
     }
   };
 
-  const handleDeleteAnalysis = async (attachmentId) => {
+  const handleDeleteAnalysis = async (item) => {
     try {
-      if (!mission?.issueKey || !attachmentId) {
+      if (!item?.attachmentId) {
         window.alert('Analyse introuvable.');
         return;
       }
@@ -834,11 +941,11 @@ const MissionDetails = ({ mission, onBack }) => {
       const confirmed = window.confirm('Supprimer cette donnée extraite ?');
       if (!confirmed) return;
 
-      setDeletingAnalysisId(attachmentId);
+      setDeletingAnalysisId(item.analysisKey || item.attachmentId);
 
       const res = await deleteMissionAttachmentAnalysis({
-        issueKey: mission.issueKey,
-        attachmentId
+        issueKey: item.sourceIssueKey || mission.issueKey,
+        attachmentId: item.attachmentId
       });
 
       if (!res?.success) {
@@ -848,7 +955,7 @@ const MissionDetails = ({ mission, onBack }) => {
 
       await loadAttachmentAnalyses();
 
-      if (editingAnalysisId === attachmentId) {
+      if (editingAnalysisId === (item.analysisKey || item.attachmentId)) {
         cancelEditAnalysis();
       }
 
@@ -859,6 +966,36 @@ const MissionDetails = ({ mission, onBack }) => {
     } finally {
       setDeletingAnalysisId(null);
     }
+  };
+
+  const renderChargeChoice = () => {
+    if (!selectedChargeType || chargeCreationMode) return null;
+
+    return (
+      <Box xcss={formCardStyles}>
+        <Stack space="space.150">
+          <Heading size="small">
+            Ajouter {getChargeLabelFront(selectedChargeType)}
+          </Heading>
+
+          <Text>Choisir le mode d’ajout :</Text>
+
+          <Inline space="space.100">
+            <Button appearance="primary" onClick={chooseWithDocument}>
+              Avec document
+            </Button>
+
+            <Button appearance="default" onClick={chooseWithoutDocument}>
+              Sans document
+            </Button>
+
+            <Button appearance="subtle" onClick={closeChargeForm}>
+              Annuler
+            </Button>
+          </Inline>
+        </Stack>
+      </Box>
+    );
   };
 
   const renderChargeForm = () => {
@@ -1047,18 +1184,22 @@ const MissionDetails = ({ mission, onBack }) => {
   };
 
   const renderUploadPanel = () => {
-  if (!uploadPanel.open) return null;
+    if (!uploadPanel.open) return null;
 
-  return (
-    <Box xcss={uploadPanelStyles}>
-      <Stack space="space.150">
-        <Heading size="small">Ajouter une pièce jointe</Heading>
-        <Text>Cible : {uploadPanel.label}</Text>
-        <Frame resource="upload-frame" />
-      </Stack>
-    </Box>
-  );
-};
+    return (
+      <Box xcss={uploadPanelStyles}>
+        <Stack space="space.150">
+          <Heading size="small">Ajouter une pièce jointe</Heading>
+          <Text>Cible : {uploadPanel.label}</Text>
+          <Frame resource="upload-frame" />
+
+          <Button appearance="subtle" onClick={closeUploadPanel}>
+            Annuler
+          </Button>
+        </Stack>
+      </Box>
+    );
+  };
 
   useEffect(() => {
     if (!mission) return;
@@ -1068,61 +1209,63 @@ const MissionDetails = ({ mission, onBack }) => {
   }, [mission?.issueKey, mission?.id]);
 
   useEffect(() => {
-  let subscriptionRequest;
-  let subscriptionCancel;
+    let subscriptionRequest;
+    let subscriptionCancel;
 
-  const register = async () => {
-    subscriptionRequest = await events.on('ATTACHMENT_UPLOAD_REQUEST', async (payload) => {
-      try {
-        if (!uploadPanel.issueKey) {
-          await events.emit('ATTACHMENT_UPLOAD_ERROR', {
-            message: 'IssueKey introuvable.'
+    const register = async () => {
+      subscriptionRequest = await events.on('ATTACHMENT_UPLOAD_REQUEST', async (payload) => {
+        try {
+          if (!uploadPanel.issueKey) {
+            await events.emit('ATTACHMENT_UPLOAD_ERROR', {
+              message: 'IssueKey introuvable.'
+            });
+            return;
+          }
+
+          const res = await uploadAttachment({
+            issueKey: uploadPanel.issueKey,
+            fileName: payload.fileName,
+            mimeType: payload.mimeType,
+            base64Content: payload.fileBase64
           });
-          return;
-        }
 
-        const res = await uploadAttachment({
-          issueKey: uploadPanel.issueKey,
-          fileName: payload.fileName,
-          mimeType: payload.mimeType,
-          base64Content: payload.fileBase64
-        });
+          if (!res?.success) {
+            await events.emit('ATTACHMENT_UPLOAD_ERROR', {
+              message: res?.message || "Erreur lors de l'enregistrement."
+            });
+            return;
+          }
 
-        if (!res?.success) {
-          await events.emit('ATTACHMENT_UPLOAD_ERROR', {
-            message: res?.message || "Erreur lors de l'enregistrement."
+          await loadAttachments();
+          await loadCharges();
+
+          const found = await waitForAnalysesRefresh();
+          if (!found) {
+            await loadAttachmentAnalyses();
+          }
+
+          closeUploadPanel();
+          setChargeCreationMode(null);
+          setSelectedChargeType(null);
+
+          await events.emit('ATTACHMENT_UPLOAD_SUCCESS', {
+            ok: true
           });
-          return;
+        } catch (error) {
+          console.error('Erreur upload depuis frame :', error);
+
+          await events.emit('ATTACHMENT_UPLOAD_ERROR', {
+            message: "Erreur lors de l'enregistrement."
+          });
         }
+      });
 
-        await loadAttachments();
-        await loadCharges();
-
-        const found = await waitForAnalysesRefresh();
-        if (!found) {
-          await loadAttachmentAnalyses();
-        }
-
+      subscriptionCancel = await events.on('ATTACHMENT_UPLOAD_CANCEL', async () => {
         closeUploadPanel();
+      });
+    };
 
-        await events.emit('ATTACHMENT_UPLOAD_SUCCESS', {
-          ok: true
-        });
-      } catch (error) {
-        console.error('Erreur upload depuis frame :', error);
-
-        await events.emit('ATTACHMENT_UPLOAD_ERROR', {
-          message: "Erreur lors de l'enregistrement."
-        });
-      }
-    });
-
-    subscriptionCancel = await events.on('ATTACHMENT_UPLOAD_CANCEL', async () => {
-      closeUploadPanel();
-    });
-  };
-
-  register();
+    register();
 
     return () => {
       if (subscriptionRequest) {
@@ -1132,7 +1275,8 @@ const MissionDetails = ({ mission, onBack }) => {
         subscriptionCancel.unsubscribe();
       }
     };
-}, [uploadPanel.issueKey, uploadPanel.open, mission?.issueKey]);
+  }, [uploadPanel.issueKey, uploadPanel.open, mission?.issueKey]);
+
   if (!mission) {
     return <Text>Aucune mission sélectionnée.</Text>;
   }
@@ -1189,15 +1333,15 @@ const MissionDetails = ({ mission, onBack }) => {
       </Inline>
 
       <Stack space="space.150">
-  <Box xcss={sectionHeaderStyles}>
-    <Heading size="small">Charges de mission</Heading>
-  </Box>
+        <Box xcss={sectionHeaderStyles}>
+          <Heading size="small">Charges de mission</Heading>
+        </Box>
 
         <Inline space="space.100">
           {CHARGE_TYPES.map(({ type, label, emoji }) => (
             <Button
               key={type}
-              appearance={selectedChargeType === type && showChargeForm ? 'primary' : 'subtle'}
+              appearance={selectedChargeType === type ? 'primary' : 'subtle'}
               onClick={() => openChargeForm(type)}
             >
               {emoji} {label}
@@ -1205,6 +1349,8 @@ const MissionDetails = ({ mission, onBack }) => {
           ))}
         </Inline>
 
+        {renderChargeChoice()}
+        {chargeCreationMode === 'with_document' && renderUploadPanel()}
         {renderChargeForm()}
 
         {loadingCharges && (
@@ -1305,7 +1451,9 @@ const MissionDetails = ({ mission, onBack }) => {
         )}
       </Stack>
 
-          <Stack space="space.150">
+      {uploadPanel.open && chargeCreationMode !== 'with_document' && renderUploadPanel()}
+
+      <Stack space="space.150">
         <Box xcss={sectionHeaderStyles}>
           <Inline spread="space-between" alignBlock="center">
             <Heading size="small">Documents de mission</Heading>
@@ -1329,8 +1477,6 @@ const MissionDetails = ({ mission, onBack }) => {
             </Inline>
           </Inline>
         </Box>
-
-        {renderUploadPanel()}
 
         {loadingAttachments && (
           <Text color="color.text.subtlest">Chargement des documents...</Text>
@@ -1440,11 +1586,12 @@ const MissionDetails = ({ mission, onBack }) => {
 
             {attachmentAnalyses.map((item, index) => {
               const isLast = index === attachmentAnalyses.length - 1;
-              const isEditing = editingAnalysisId === item.attachmentId;
+              const rowKey = item.analysisKey || item.attachmentId;
+              const isEditing = editingAnalysisId === rowKey;
 
               return (
                 <Box
-                  key={`${item.attachmentId}-${index}`}
+                  key={`${rowKey}-${index}`}
                   xcss={isLast ? tableLastRowStyles : tableRowStyles}
                 >
                   {!isEditing ? (
@@ -1484,10 +1631,10 @@ const MissionDetails = ({ mission, onBack }) => {
 
                           <Button
                             appearance="danger"
-                            onClick={() => handleDeleteAnalysis(item.attachmentId)}
-                            isDisabled={deletingAnalysisId === item.attachmentId}
+                            onClick={() => handleDeleteAnalysis(item)}
+                            isDisabled={deletingAnalysisId === rowKey}
                           >
-                            {deletingAnalysisId === item.attachmentId
+                            {deletingAnalysisId === rowKey
                               ? 'Suppression...'
                               : 'Supprimer'}
                           </Button>
@@ -1562,7 +1709,7 @@ const MissionDetails = ({ mission, onBack }) => {
                       <Inline space="space.100">
                         <Button
                           appearance="primary"
-                          onClick={() => handleSaveAnalysis(item.attachmentId)}
+                          onClick={() => handleSaveAnalysis(item)}
                           isDisabled={savingAnalysis}
                         >
                           {savingAnalysis ? 'Enregistrement...' : 'Enregistrer'}

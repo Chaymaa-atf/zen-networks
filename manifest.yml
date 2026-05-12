@@ -15,8 +15,8 @@ modules:
           route: missions
         - title: Données extraites
           route: extracted
-        - title: Gestion des rôles
-          route: roles
+        - title: Paramètres
+          route: settings
 
   trigger:
     - key: jira-attachment-trigger

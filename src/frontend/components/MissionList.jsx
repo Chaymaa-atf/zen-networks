@@ -67,9 +67,25 @@ const normalizeText = (value) =>
 const normalizeCategory = (value) => {
   const category = normalizeText(value);
 
-  if (category.includes('transport') || category.includes('taxi') || category.includes('avion') || category.includes('train')) return 'transport';
-  if (category.includes('hebergement') || category.includes('hotel') || category.includes('airbnb')) return 'hebergement';
-  if (category.includes('restaurant') || category.includes('restauration') || category.includes('repas') || category.includes('mcdo')) return 'restaurant';
+  if (
+    category.includes('transport') ||
+    category.includes('taxi') ||
+    category.includes('avion') ||
+    category.includes('train')
+  ) return 'transport';
+
+  if (
+    category.includes('hebergement') ||
+    category.includes('hotel') ||
+    category.includes('airbnb')
+  ) return 'hebergement';
+
+  if (
+    category.includes('restaurant') ||
+    category.includes('restauration') ||
+    category.includes('repas') ||
+    category.includes('mcdo')
+  ) return 'restaurant';
 
   return category || 'autre';
 };
@@ -124,7 +140,8 @@ const MissionList = ({
   onCreateMission,
   onDeleteMission,
   onEditMission,
-  onUpdateStatus
+  onUpdateStatus,
+  onPrepareOrdre
 }) => {
   const filterOptions = [
     { label: 'Nom', value: 'nom' },
@@ -149,8 +166,6 @@ const MissionList = ({
   const [filterType, setFilterType] = useState(null);
   const [expenseFilter, setExpenseFilter] = useState(expenseFilterOptions[0]);
   const [sortConfig, setSortConfig] = useState({ column: null, direction: null });
-
-  // important: garde le statut changé directement dans l'interface
   const [localStatuses, setLocalStatuses] = useState({});
 
   const selectedExpenseFilter = expenseFilter?.value || 'all';
@@ -178,6 +193,12 @@ const MissionList = ({
 
     if (onUpdateStatus) {
       await onUpdateStatus(mission.id, newStatus);
+    }
+  };
+
+  const handleGenerateOrdreMission = async (missionId) => {
+    if (onPrepareOrdre) {
+      onPrepareOrdre(missionId);
     }
   };
 
@@ -379,7 +400,7 @@ const MissionList = ({
                   <SortHeader label="DATES" column="date" sortConfig={sortConfig} onSort={handleSort} />
                 </Box>
 
-                <Box xcss={xcss({ width: '125px' })}>
+                <Box xcss={xcss({ width: '170px' })}>
                   <Text xcss={subtitleStyles}>STATUT</Text>
                 </Box>
 
@@ -387,7 +408,7 @@ const MissionList = ({
                   <SortHeader label={amountColumnLabel} column="montant" sortConfig={sortConfig} onSort={handleSort} />
                 </Box>
 
-                <Box xcss={xcss({ width: '210px', textAlign: 'right' })}>
+                <Box xcss={xcss({ width: '340px', textAlign: 'right' })}>
                   <Text xcss={subtitleStyles}>ACTION</Text>
                 </Box>
               </Inline>
@@ -441,17 +462,37 @@ const MissionList = ({
                     <Text xcss={titleStyles}>{formatAmount(getMissionAmount(mission))}</Text>
                   </Box>
 
-                  <Box xcss={xcss({ width: '210px', textAlign: 'right' })}>
-                    <Inline space="space.075" alignBlock="center">
-                      <Button appearance="subtle" spacing="compact" onClick={() => onViewDetails(mission.id)}>
+                  <Box xcss={xcss({ width: '340px', textAlign: 'right' })}>
+                    <Inline space="space.050" alignBlock="center">
+                      <Button
+                        appearance="warning"
+                        spacing="compact"
+                        onClick={() => handleGenerateOrdreMission(mission.id)}
+                      >
+                        Ordre
+                      </Button>
+
+                      <Button
+                        appearance="subtle"
+                        spacing="compact"
+                        onClick={() => onViewDetails(mission.id)}
+                      >
                         Détails
                       </Button>
 
-                      <Button appearance="primary" spacing="compact" onClick={() => onEditMission && onEditMission(mission.id)}>
+                      <Button
+                        appearance="primary"
+                        spacing="compact"
+                        onClick={() => onEditMission && onEditMission(mission.id)}
+                      >
                         Modifier
                       </Button>
 
-                      <Button appearance="danger" spacing="compact" onClick={() => onDeleteMission && onDeleteMission(mission.id)}>
+                      <Button
+                        appearance="danger"
+                        spacing="compact"
+                        onClick={() => onDeleteMission && onDeleteMission(mission.id)}
+                      >
                         Supprimer
                       </Button>
                     </Inline>

@@ -292,7 +292,11 @@ const DonneesExtraites = ({ missions = [], analyses = [] }) => {
         <Text>{item.employee}</Text>
         <Text>{item.category || '—'}</Text>
         <Text>{item.date || '—'}</Text>
-        <Text>{item.amount || '—'}</Text>
+       <Text>
+        {item.amount
+          ? `${item.amount} ${item.currency || item.devise || 'DH'}`
+          : '—'}
+      </Text>
         <Text>{item.details || '—'}</Text>
 
         <Inline space="space.050">

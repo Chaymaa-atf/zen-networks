@@ -141,3 +141,16 @@ export const removeAdminUser = async (adminId) => {
 export const searchJiraUsersForAdmin = async (query) => {
   return await invoke('searchJiraUsersForAdmin', { query });
 };
+export const createManualChargeAnalysis = async (payload) => {
+  return await invoke('createManualChargeAnalysis', payload);
+};
+export const getOrdreMissionConfig = async () => {
+  return await invoke('getOrdreMissionConfig');
+};
+
+export const saveOrdreMissionConfig = async (payload) => {
+  return await invoke('saveOrdreMissionConfig', payload);
+};
+export const generateOrdreMissionPdf = async (payload) => {
+  return await invoke('generateOrdreMissionPdf', payload);
+};

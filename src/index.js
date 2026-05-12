@@ -537,20 +537,46 @@ resolver.define('getMissionById', async ({ payload }) => {
 });
 
 resolver.define('updateMissionStatus', async ({ payload }) => {
-  const { missionId, statut } = payload;
+  try {
+    const { missionId, statut } = payload || {};
 
-  const mission = await storage.get(`mission-${missionId}`);
+    if (!missionId || !statut) {
+      return {
+        success: false,
+        message: 'missionId ou statut manquant.'
+      };
+    }
 
-  if (!mission) {
-    return { success: false, error: 'Mission introuvable' };
+    const mission = await kvs.get(missionId);
+
+    if (!mission) {
+      return {
+        success: false,
+        message: 'Mission introuvable.'
+      };
+    }
+
+    const updatedMission = {
+      ...mission,
+      statut,
+      updatedAt: new Date().toISOString()
+    };
+
+    await kvs.set(missionId, updatedMission);
+
+    return {
+      success: true,
+      message: 'Statut modifié avec succès.',
+      mission: updatedMission
+    };
+  } catch (error) {
+    console.error('Erreur updateMissionStatus:', error);
+
+    return {
+      success: false,
+      message: error.message
+    };
   }
-
-  await storage.set(`mission-${missionId}`, {
-    ...mission,
-    statut,
-  });
-
-  return { success: true };
 });
 
 resolver.define('deleteMission', async ({ payload }) => {
@@ -2002,5 +2028,240 @@ const users = (data || [])
     };
   }
 });
+resolver.define('createManualChargeAnalysis', async ({ payload }) => {
+  try {
+    const {
+      issueKey,
+      chargeKey,
+      type,
+      fileName,
+      date,
+      amount,
+      currency,
+      details
+    } = payload || {};
 
+    if (!issueKey || !type) {
+      return {
+        success: false,
+        message: 'issueKey ou type manquant.'
+      };
+    }
+
+    const attachmentId = `manual-${Date.now()}`;
+
+    const manualAnalysis = {
+      attachmentId,
+      fileName: fileName || 'Saisie manuelle',
+      category: type,
+      date: date || '',
+      amount: amount || '',
+      currency: currency || 'MAD',
+      details: details || '',
+      sourceIssueKey: chargeKey || issueKey,
+      missionIssueKey: issueKey,
+      manual: true,
+      createdAt: new Date().toISOString()
+    };
+
+    await kvs.set(`charge-analysis-${issueKey}-${attachmentId}`, manualAnalysis);
+
+    return {
+      success: true,
+      message: 'Donnée manuelle ajoutée avec succès.',
+      analysis: manualAnalysis
+    };
+  } catch (error) {
+    console.error('Erreur createManualChargeAnalysis:', error);
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+});
+resolver.define('getOrdreMissionConfig', async () => {
+  try {
+    const config = await kvs.get('ordre-mission-config');
+
+    return {
+      success: true,
+      config: config || {
+        companyName: 'Zen Networks',
+        ice: '001867 807 0000',
+        address: '460 - 461, Technopark Boulevard Dammam Casablanca 20000 Morocco',
+        phone: '+212 522 784 589 / +212 661 560 337',
+        email: 'contact@zen-networks.ma',
+        rc: '34163',
+        cnss: '5446895',
+        ifNumber: '20746278',
+        patente: '67519049'
+      }
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+});
+
+resolver.define('saveOrdreMissionConfig', async ({ payload }) => {
+  try {
+    await kvs.set('ordre-mission-config', {
+      ...payload,
+      updatedAt: new Date().toISOString()
+    });
+
+    return {
+      success: true,
+      message: 'Paramètres ordre de mission enregistrés avec succès.'
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+});
+resolver.define('generateOrdreMissionPdf', async ({ payload }) => {
+  try {
+    const { missionId, ordreData = {} } = payload || {};
+
+    if (!missionId) {
+      return { success: false, message: 'missionId manquant.' };
+    }
+
+    const mission = await kvs.get(missionId);
+
+    if (!mission) {
+      return { success: false, message: 'Mission introuvable.' };
+    }
+
+    const config = await kvs.get('ordre-mission-config') || {
+      companyName: 'Zen Networks',
+      ice: '001867 807 0000',
+      address: '460 - 461, Technopark Boulevard Dammam Casablanca 20000 Morocco',
+      phone: '+212 522 784 589 / +212 661 560 337',
+      email: 'contact@zen-networks.ma',
+      rc: '34163',
+      cnss: '5446895',
+      ifNumber: '20746278',
+      patente: '67519049'
+    };
+
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595.28, 841.89]);
+
+    const font = await pdfDoc.embedFont('Helvetica');
+    const boldFont = await pdfDoc.embedFont('Helvetica-Bold');
+
+    let y = 790;
+
+    const drawText = (text, x = 70, size = 10, bold = false) => {
+      page.drawText(String(text || ''), {
+        x,
+        y,
+        size,
+        font: bold ? boldFont : font
+      });
+      y -= size + 7;
+    };
+
+    const drawTitle = (text) => {
+      y -= 12;
+      drawText(text, 70, 12, true);
+      y -= 6;
+    };
+
+    const drawLines = (text, emptyText) => {
+      const lines = String(text || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      if (lines.length === 0) {
+        drawText(`- ${emptyText}`, 70, 10, true);
+        return;
+      }
+
+      lines.forEach((line) => {
+        drawText(`- ${line}`, 70, 10, true);
+      });
+    };
+
+    const year = new Date().getFullYear();
+    const ordreNumber = `OM/${year}/${String(Date.now()).slice(-3)}`;
+
+    drawText(config.companyName, 70, 16, true);
+
+    y -= 20;
+
+    drawText(`ORDRE DE MISSION N ${ordreNumber}`, 70, 12, true);
+
+    y -= 10;
+
+    drawText(`Raison sociale : ${config.companyName}`, 70, 10, true);
+    drawText(`ICE : ${config.ice}`, 70, 10, true);
+    drawText(`Adresse : ${config.address}`, 70, 10, true);
+    drawText(`Tel : ${config.phone}`, 70, 10, true);
+
+    drawTitle('INFORMATIONS SUR LE COLLABORATEUR');
+
+    drawText(
+      `Nom et Prenom : ${
+        ordreData.nomPrenom ||
+        `${mission.prenomEmploye || ''} ${mission.nomEmploye || ''}`.trim() ||
+        '-'
+      }`,
+      70,
+      10,
+      true
+    );
+    drawText(`Fonction : ${ordreData.fonction || 'Collaborateur'}`, 70, 10, true);
+    drawText(`CIN : ${ordreData.cin || '-'}`, 70, 10, true);
+
+    drawTitle('OBJET DE LA MISSION');
+
+    drawText(`Nature de la mission : ${ordreData.natureMission || mission.titre || '-'}`, 70, 10, true);
+    drawText(`Lieu de la mission : ${ordreData.lieuMission || mission.ville || '-'}`, 70, 10, true);
+    drawText(`Pays : ${ordreData.pays || mission.pays || mission.destination || '-'}`, 70, 10, true);
+
+    drawTitle('DUREE DE LA MISSION');
+
+    drawText(`Date de depart : ${ordreData.dateDepart || mission.dateDepart || '-'}`, 70, 10, true);
+    drawText(`Date de retour : ${ordreData.dateRetour || mission.dateRetour || '-'}`, 70, 10, true);
+    drawText(`Duree totale : ${ordreData.duree || '-'}`, 70, 10, true);
+
+    drawTitle('MOYENS DE TRANSPORT');
+    drawLines(ordreData.transports, 'Aucun transport');
+
+    drawTitle('FRAIS DE MISSION');
+
+    drawText('Hebergement', 70, 10, true);
+    drawLines(ordreData.hebergements, 'Aucun hebergement');
+
+    drawText('Restauration', 70, 10, true);
+    drawLines(ordreData.restaurants, 'Aucun remboursement');
+
+    y = 85;
+
+    drawText(`${config.companyName} - SARL - Tel : ${config.phone} - Email: ${config.email}`, 70, 8, true);
+    drawText(`RC ${config.rc} - CNSS ${config.cnss} - IF ${config.ifNumber} - Patente ${config.patente} - ICE ${config.ice}`, 70, 8, true);
+
+    const pdfBytes = await pdfDoc.save();
+    const pdfBase64 = Buffer.from(pdfBytes).toString('base64');
+
+    return {
+      success: true,
+      fileName: `ordre-mission-${mission.issueKey || missionId}.pdf`,
+      pdfBase64
+    };
+  } catch (error) {
+    console.error('Erreur generateOrdreMissionPdf:', error);
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+});
 export const handler = resolver.getDefinitions();

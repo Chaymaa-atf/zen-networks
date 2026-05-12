@@ -11,10 +11,10 @@ import MissionForm from './components/MissionForm';
 import MissionList from './components/MissionList';
 import MissionDetails from './components/MissionDetails';
 import AppConfiguration from './components/AppConfiguration';
-import GestionRoles from './components/GestionRoles';
+import Parametres from './components/Parametres';
 import DonneesExtraites from './components/DonneesExtraites';
 import Statistiques from './components/Statistiques';
-
+import OrdreMissionForm from './components/OrdreMissionForm';
 import {
   createMission,
   updateMission,
@@ -33,7 +33,7 @@ const App = () => {
   const [currentPage, setCurrentPage] = useState('missions');
   const [checkingConfig, setCheckingConfig] = useState(true);
   const [appConfig, setAppConfig] = useState(null);
-
+  const [showOrdreForm, setShowOrdreForm] = useState(false);
   const [missions, setMissions] = useState([]);
   const [analyses, setAnalyses] = useState([]);
   const [loadingMissions, setLoadingMissions] = useState(true);
@@ -54,13 +54,14 @@ const App = () => {
     setShowDetails(false);
     setSelectedMission(null);
     setIsEditMode(false);
+    setShowOrdreForm(false);
   };
 
   const updatePageFromPath = (path) => {
     const pathText = String(path || '');
 
-    if (pathText.includes('roles')) {
-      setCurrentPage('roles');
+    if (pathText.includes('settings')) {
+      setCurrentPage('settings');
     } else if (pathText.includes('extracted')) {
       setCurrentPage('extracted');
     } else if (pathText.includes('statistics')) {
@@ -336,6 +337,26 @@ const handleUpdateStatus = async (missionId, newStatus) => {
     setResultMessage(error.message);
   }
 };
+const handlePrepareOrdreMission = async (missionId) => {
+  setResultMessage('');
+  setIsError(false);
+
+  try {
+    const response = await getMissionById(missionId);
+
+    if (response.success) {
+      resetViewState();
+      setSelectedMission(response.mission);
+      setShowOrdreForm(true);
+    } else {
+      setIsError(true);
+      setResultMessage(response.message || 'Impossible de charger la mission.');
+    }
+  } catch (error) {
+    setIsError(true);
+    setResultMessage(`Erreur frontend: ${error.message}`);
+  }
+};
   const handleBackToList = async () => {
     resetViewState();
 
@@ -361,7 +382,7 @@ const handleUpdateStatus = async (missionId, newStatus) => {
           </SectionMessage>
         )}
 
-        {currentPage === 'roles' && <GestionRoles />}
+        {currentPage === 'settings' && <Parametres />}
 
         {currentPage === 'extracted' && (
           <DonneesExtraites missions={missions} analyses={analyses} />
@@ -381,22 +402,38 @@ const handleUpdateStatus = async (missionId, newStatus) => {
           />
         )}
 
-        {currentPage === 'missions' && showDetails && (
-          <MissionDetails mission={selectedMission} onBack={handleBackToList} />
-        )}
+        {currentPage === 'missions' && showOrdreForm && (
+        <OrdreMissionForm
+          mission={selectedMission}
+          analyses={analyses || []}
+          onBack={handleBackToList}
+        />
+      )}
 
-        {currentPage === 'missions' && !showForm && !showDetails && (
+    {currentPage === 'missions' && showDetails && !showOrdreForm && (
+      <MissionDetails
+        mission={selectedMission}
+        onBack={handleBackToList}
+      />
+    )}
+
+    {currentPage === 'missions' &&
+      !showForm &&
+      !showDetails &&
+      !showOrdreForm && (
         <MissionList
-            missions={missions}
-            charges={analyses || []}
-            loading={loadingMissions}
-            userRole={userRole}
-            onViewDetails={handleViewDetails}
-            onCreateMission={handleOpenCreateForm}
-            onDeleteMission={handleDeleteMission}
-            onEditMission={handleEditMission}
-          />
-        )}
+          missions={missions}
+          charges={analyses || []}
+          loading={loadingMissions}
+          userRole={userRole}
+          onViewDetails={handleViewDetails}
+          onCreateMission={handleOpenCreateForm}
+          onDeleteMission={handleDeleteMission}
+          onEditMission={handleEditMission}
+          onUpdateStatus={handleUpdateStatus}
+          onPrepareOrdre={handlePrepareOrdreMission}
+        />
+    )}
       </Stack>
     </Box>
   );
