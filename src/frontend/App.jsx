@@ -333,10 +333,23 @@ const App = () => {
           </SectionMessage>
         )}
 
-        {currentPage === 'settings' && <Parametres />}
+        {currentPage === 'settings' && (
+  userRole === 'admin' ? (
+    <Parametres />
+  ) : (
+    <SectionMessage appearance="error">
+      <Text>Accès refusé. Cette page est réservée aux administrateurs.</Text>
+    </SectionMessage>
+  )
+)}
 
         {currentPage === 'extracted' && (
-          <DonneesExtraites missions={missions} analyses={analyses} />
+          <DonneesExtraites
+            missions={missions}
+            analyses={analyses}
+            userRole={userRole}
+            currentUser={currentUser}
+          />
         )}
 
         {currentPage === 'statistics' && (

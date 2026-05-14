@@ -57,6 +57,8 @@ const Parametres = () => {
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
+  const [activeSection, setActiveSection] = useState('roles');
+
   const updateField = (field, value) => {
     setConfig((prev) => ({
       ...prev,
@@ -102,112 +104,180 @@ const Parametres = () => {
     <Stack space="space.300">
       <Heading size="large">Paramètres</Heading>
 
-      <Box xcss={cardStyles}>
-        <GestionRoles />
-      </Box>
+      {/* BOUTONS */}
+      <Inline space="space.100">
+        <Button
+          appearance={activeSection === 'roles' ? 'primary' : 'subtle'}
+          onClick={() => setActiveSection('roles')}
+        >
+          Gestion des administrateurs
+        </Button>
 
-      <Box xcss={cardStyles}>
-        <Stack space="space.200">
-          <Inline spread="space-between" alignBlock="center">
-            <Heading size="medium">Paramètres ordre de mission</Heading>
+        <Button
+          appearance={activeSection === 'ordre' ? 'primary' : 'subtle'}
+          onClick={() => setActiveSection('ordre')}
+        >
+          Paramètres ordre de mission
+        </Button>
+      </Inline>
 
-            {!isEditing ? (
-              <Button appearance="primary" onClick={() => setIsEditing(true)}>
-                Modifier
-              </Button>
-            ) : (
-              <Inline space="space.100">
-                <Button appearance="primary" onClick={handleSave} isDisabled={saving}>
-                  {saving ? 'Enregistrement...' : 'Enregistrer'}
+      {/* GESTION ROLES */}
+      {activeSection === 'roles' && (
+        <Box xcss={cardStyles}>
+          <GestionRoles />
+        </Box>
+      )}
+
+      {/* PARAMETRES ORDRE */}
+      {activeSection === 'ordre' && (
+        <Box xcss={cardStyles}>
+          <Stack space="space.200">
+            <Inline spread="space-between" alignBlock="center">
+              <Heading size="medium">
+                Paramètres ordre de mission
+              </Heading>
+
+              {!isEditing ? (
+                <Button
+                  appearance="primary"
+                  onClick={() => setIsEditing(true)}
+                >
+                  Modifier
                 </Button>
+              ) : (
+                <Inline space="space.100">
+                  <Button
+                    appearance="primary"
+                    onClick={handleSave}
+                    isDisabled={saving}
+                  >
+                    {saving
+                      ? 'Enregistrement...'
+                      : 'Enregistrer'}
+                  </Button>
 
-                <Button appearance="subtle" onClick={handleCancel} isDisabled={saving}>
-                  Annuler
-                </Button>
-              </Inline>
-            )}
-          </Inline>
+                  <Button
+                    appearance="subtle"
+                    onClick={handleCancel}
+                    isDisabled={saving}
+                  >
+                    Annuler
+                  </Button>
+                </Inline>
+              )}
+            </Inline>
 
-          {message && <Text>{message}</Text>}
+            {message && <Text>{message}</Text>}
 
-          <Stack space="space.100">
-            <Text>Logo entreprise</Text>
+            <Stack space="space.100">
+              <Text>Logo entreprise</Text>
 
-            <Box xcss={logoBoxStyles}>
-              <Stack space="space.100">
-                <Image src={logo} alt="Logo entreprise" />
+              <Box xcss={logoBoxStyles}>
+                <Stack space="space.100">
+                  <Image
+                    src={logo}
+                    alt="Logo entreprise"
+                  />
 
-                <Text color="color.text.subtlest">
-                  Logo actuel de l’entreprise
-                </Text>
-              </Stack>
-            </Box>
+                  <Text color="color.text.subtlest">
+                    Logo actuel de l’entreprise
+                  </Text>
+                </Stack>
+              </Box>
+            </Stack>
+
+            <Text>Nom entreprise</Text>
+            <Textfield
+              value={config.companyName}
+              isDisabled={!isEditing}
+              onChange={(e) =>
+                updateField(
+                  'companyName',
+                  e.target.value
+                )
+              }
+            />
+
+            <Text>ICE</Text>
+            <Textfield
+              value={config.ice}
+              isDisabled={!isEditing}
+              onChange={(e) =>
+                updateField('ice', e.target.value)
+              }
+            />
+
+            <Text>Adresse</Text>
+            <Textfield
+              value={config.address}
+              isDisabled={!isEditing}
+              onChange={(e) =>
+                updateField('address', e.target.value)
+              }
+            />
+
+            <Text>Téléphone</Text>
+            <Textfield
+              value={config.phone}
+              isDisabled={!isEditing}
+              onChange={(e) =>
+                updateField('phone', e.target.value)
+              }
+            />
+
+            <Text>Email</Text>
+            <Textfield
+              value={config.email}
+              isDisabled={!isEditing}
+              onChange={(e) =>
+                updateField('email', e.target.value)
+              }
+            />
+
+            <Text>RC</Text>
+            <Textfield
+              value={config.rc}
+              isDisabled={!isEditing}
+              onChange={(e) =>
+                updateField('rc', e.target.value)
+              }
+            />
+
+            <Text>CNSS</Text>
+            <Textfield
+              value={config.cnss}
+              isDisabled={!isEditing}
+              onChange={(e) =>
+                updateField('cnss', e.target.value)
+              }
+            />
+
+            <Text>IF</Text>
+            <Textfield
+              value={config.ifNumber}
+              isDisabled={!isEditing}
+              onChange={(e) =>
+                updateField(
+                  'ifNumber',
+                  e.target.value
+                )
+              }
+            />
+
+            <Text>Patente</Text>
+            <Textfield
+              value={config.patente}
+              isDisabled={!isEditing}
+              onChange={(e) =>
+                updateField(
+                  'patente',
+                  e.target.value
+                )
+              }
+            />
           </Stack>
-
-          <Text>Nom entreprise</Text>
-          <Textfield
-            value={config.companyName}
-            isDisabled={!isEditing}
-            onChange={(e) => updateField('companyName', e.target.value)}
-          />
-
-          <Text>ICE</Text>
-          <Textfield
-            value={config.ice}
-            isDisabled={!isEditing}
-            onChange={(e) => updateField('ice', e.target.value)}
-          />
-
-          <Text>Adresse</Text>
-          <Textfield
-            value={config.address}
-            isDisabled={!isEditing}
-            onChange={(e) => updateField('address', e.target.value)}
-          />
-
-          <Text>Téléphone</Text>
-          <Textfield
-            value={config.phone}
-            isDisabled={!isEditing}
-            onChange={(e) => updateField('phone', e.target.value)}
-          />
-
-          <Text>Email</Text>
-          <Textfield
-            value={config.email}
-            isDisabled={!isEditing}
-            onChange={(e) => updateField('email', e.target.value)}
-          />
-
-          <Text>RC</Text>
-          <Textfield
-            value={config.rc}
-            isDisabled={!isEditing}
-            onChange={(e) => updateField('rc', e.target.value)}
-          />
-
-          <Text>CNSS</Text>
-          <Textfield
-            value={config.cnss}
-            isDisabled={!isEditing}
-            onChange={(e) => updateField('cnss', e.target.value)}
-          />
-
-          <Text>IF</Text>
-          <Textfield
-            value={config.ifNumber}
-            isDisabled={!isEditing}
-            onChange={(e) => updateField('ifNumber', e.target.value)}
-          />
-
-          <Text>Patente</Text>
-          <Textfield
-            value={config.patente}
-            isDisabled={!isEditing}
-            onChange={(e) => updateField('patente', e.target.value)}
-          />
-        </Stack>
-      </Box>
+        </Box>
+      )}
     </Stack>
   );
 };

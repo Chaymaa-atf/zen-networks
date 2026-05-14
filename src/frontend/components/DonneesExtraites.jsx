@@ -163,14 +163,21 @@ const DonneesExtraites = ({ missions = [], analyses = [] }) => {
     { label: 'Décembre', value: '12' }
   ];
 
-  const enriched = useMemo(() => {
-    return analyses.map(a => {
-      const mission = missions.find(m =>
+  const visibleMissions = useMemo(() => {
+  return missions;
+}, [missions]);
+
+const enriched = useMemo(() => {
+  return analyses
+    .map(a => {
+      const mission = visibleMissions.find(m =>
         m.issueKey === a.missionIssueKey ||
         m.issueKey === a.issueKey ||
         m.issueKey === a.sourceIssueKey ||
         m.id === a.missionId
       );
+
+      if (!mission) return null;
 
       return {
         ...a,
@@ -179,8 +186,9 @@ const DonneesExtraites = ({ missions = [], analyses = [] }) => {
         employee:
           `${mission?.prenomEmploye || ''} ${mission?.nomEmploye || ''}`.trim() || '—'
       };
-    });
-  }, [analyses, missions]);
+    })
+    .filter(Boolean);
+}, [analyses, visibleMissions]);
 
   const filtered = useMemo(() => {
     return enriched.filter(item => {

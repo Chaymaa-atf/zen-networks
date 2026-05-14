@@ -136,6 +136,7 @@ const MissionList = ({
   missions = [],
   charges = [],
   loading,
+  userRole = 'employe',
   onViewDetails,
   onCreateMission,
   onDeleteMission,
@@ -448,55 +449,64 @@ const MissionList = ({
                   </Box>
 
                   <Box xcss={xcss({ width: '125px' })}>
-                    <Select
-                      options={statusOptions}
-                      value={
-                        statusOptions.find((option) => option.value === getMissionStatus(mission)) ||
-                        statusOptions[0]
-                      }
-                      onChange={(value) => handleStatusChange(mission, value)}
-                    />
-                  </Box>
+  {userRole === 'admin' ? (
+    <Select
+      options={statusOptions}
+      value={
+        statusOptions.find((option) => option.value === getMissionStatus(mission)) ||
+        statusOptions[0]
+      }
+      onChange={(value) => handleStatusChange(mission, value)}
+    />
+  ) : (
+    <Text>{getMissionStatus(mission)}</Text>
+  )}
+</Box>
 
                   <Box xcss={xcss({ width: '110px', textAlign: 'right' })}>
                     <Text xcss={titleStyles}>{formatAmount(getMissionAmount(mission))}</Text>
                   </Box>
 
                   <Box xcss={xcss({ width: '340px', textAlign: 'right' })}>
-                    <Inline space="space.050" alignBlock="center">
-                      <Button
-                        appearance="warning"
-                        spacing="compact"
-                        onClick={() => handleGenerateOrdreMission(mission.id)}
-                      >
-                        Ordre
-                      </Button>
+  <Inline space="space.050" alignBlock="center">
 
-                      <Button
-                        appearance="subtle"
-                        spacing="compact"
-                        onClick={() => onViewDetails(mission.id)}
-                      >
-                        Détails
-                      </Button>
+    <Button
+      appearance="subtle"
+      spacing="compact"
+      onClick={() => onViewDetails(mission.id)}
+    >
+      Détails
+    </Button>
 
-                      <Button
-                        appearance="primary"
-                        spacing="compact"
-                        onClick={() => onEditMission && onEditMission(mission.id)}
-                      >
-                        Modifier
-                      </Button>
+    <Button
+      appearance="primary"
+      spacing="compact"
+      onClick={() => onEditMission && onEditMission(mission.id)}
+    >
+      Modifier
+    </Button>
 
-                      <Button
-                        appearance="danger"
-                        spacing="compact"
-                        onClick={() => onDeleteMission && onDeleteMission(mission.id)}
-                      >
-                        Supprimer
-                      </Button>
-                    </Inline>
-                  </Box>
+    {userRole === 'admin' && (
+      <>
+        <Button
+          appearance="warning"
+          spacing="compact"
+          onClick={() => handleGenerateOrdreMission(mission.id)}
+        >
+          Ordre
+        </Button>
+
+        <Button
+          appearance="danger"
+          spacing="compact"
+          onClick={() => onDeleteMission && onDeleteMission(mission.id)}
+        >
+          Supprimer
+        </Button>
+      </>
+    )}
+  </Inline>
+</Box>
                 </Inline>
               </Box>
             ))}
