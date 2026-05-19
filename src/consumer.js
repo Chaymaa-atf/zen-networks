@@ -140,9 +140,28 @@ async function extractTextWithOCR(bytes, mimeType, fileName) {
 ========================= */
 
 async function extractStructuredData(text, fileName) {
-  const groqApiKey =
-    process.env.GROQ_API_KEY ||
-    process.env.FORGE_USER_VAR_GROQ_API_KEY;
+  const GROQ_KEYS = [
+  process.env.GROQ_API_KEY_1,
+  process.env.GROQ_API_KEY_2,
+  process.env.GROQ_API_KEY_3,
+  process.env.GROQ_API_KEY_4,
+  process.env.GROQ_API_KEY_5,
+  process.env.GROQ_API_KEY_6,
+  process.env.GROQ_API_KEY_7,
+  process.env.GROQ_API_KEY_8
+].filter(Boolean);
+
+const getGroqApiKey = () => {
+  if (GROQ_KEYS.length === 0) {
+    throw new Error('Aucune clé Groq configurée.');
+  }
+
+  const randomIndex = Math.floor(Math.random() * GROQ_KEYS.length);
+
+  return GROQ_KEYS[randomIndex];
+};
+
+const groqApiKey = getGroqApiKey();
 
   if (!groqApiKey) {
     console.error('❌ Groq key absente');
@@ -189,17 +208,19 @@ ${text}
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: 'llama-3.1-8b-instant',
       temperature: 0,
       messages: [{ role: 'user', content: prompt }]
     })
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('❌ GROQ error:', errorText);
-    throw new Error('Erreur Groq');
-  }
+ if (!response.ok) {
+  const errorText = await response.text();
+  console.error('❌ GROQ error status:', response.status);
+  console.error('❌ GROQ error body:', errorText);
+
+  throw new Error(`Erreur Groq ${response.status}: ${errorText}`);
+}
 
   const data = await response.json();
   const content = data?.choices?.[0]?.message?.content || '';

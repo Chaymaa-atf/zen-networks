@@ -26,7 +26,8 @@ import {
   scanMissionAttachmentsForAnalysis,
   updateMissionAttachmentAnalysis,
   deleteMissionAttachmentAnalysis,
-  createManualChargeAnalysis
+  createManualChargeAnalysis,
+  deleteMissionDocument
 } from '../services/missionService';
 
 /* ─────────────────────────────
@@ -131,9 +132,9 @@ const tableLastRowStyles = xcss({
 const colTypeStyles = xcss({ width: '14%' });
 const colDetailsStyles = xcss({ width: '26%' });
 const colDateStyles = xcss({ width: '18%' });
-const colMontantStyles = xcss({ width: '12%' });
+const colMontantStyles = xcss({ width: '10%' });
 const colKeyStyles = xcss({ width: '10%' });
-const colActionsStyles = xcss({ width: '20%' });
+const colActionsStyles = xcss({ width: '40%' });
 
 /* ─────────────────────────────
    Helpers
@@ -711,9 +712,10 @@ const MissionDetails = ({ mission, onBack }) => {
         !chargeForm.nomHotel ||
         !chargeForm.ville ||
         !chargeForm.dateDebut ||
-        !chargeForm.dateFin
+        !chargeForm.dateFin ||
+        !chargeForm.montant
       ) {
-        return 'Merci de remplir type hébergement, nom, ville, date début et date fin.';
+        return 'Merci de remplir type hébergement, nom, ville, date début, date fin et montant.';
       }
     }
 
@@ -1379,9 +1381,7 @@ const MissionDetails = ({ mission, onBack }) => {
                 <Box xcss={colMontantStyles}>
                   <Text xcss={labelStyles}>MONTANT</Text>
                 </Box>
-                <Box xcss={colKeyStyles}>
-                  <Text xcss={labelStyles}>CLÉ</Text>
-                </Box>
+                
                 <Box xcss={colActionsStyles}>
                   <Text xcss={labelStyles}>ACTIONS</Text>
                 </Box>
@@ -1413,35 +1413,82 @@ const MissionDetails = ({ mission, onBack }) => {
                     <Box xcss={colMontantStyles}>
                       <Text>{row.montant}</Text>
                     </Box>
-
-                    <Box xcss={colKeyStyles}>
-                      <Text
-                        xcss={xcss({
-                          color: 'color.link',
-                          fontWeight: 'font.weight.medium',
-                          fontSize: '12px'
-                        })}
-                      >
-                        {row.issueKey}
-                      </Text>
-                    </Box>
-
+      
                     <Box xcss={colActionsStyles}>
-                      <Inline space="space.050">
-                        <Button
-                          appearance="subtle"
-                          onClick={() => router.open(`/browse/${charge.key}`)}
-                        >
-                          Ouvrir
-                        </Button>
+                      <Inline space="space.075">
+                    <Button
+  appearance="subtle"
+  onClick={() => {
+    if (!charge?.key) {
+      window.alert('Clé Jira introuvable.');
+      return;
+    }
 
-                        <Button
-                          appearance="primary"
-                          onClick={() => handleUploadForCharge(charge.key)}
-                        >
-                          + Pièce jointe
-                        </Button>
-                      </Inline>
+    router.open(`/browse/${charge.key}`);
+  }}
+>
+  Ouvrir
+</Button>
+              <Button
+                appearance="primary"
+                onClick={() => {
+                  const row = getChargeTableData(charge);
+
+                  if (row.type === 'Hébergement') {
+                    setSelectedChargeType('hebergement');
+                  } else if (row.type === 'Restaurant') {
+                    setSelectedChargeType('restaurant');
+                  } else {
+                    setSelectedChargeType('transport');
+                  }
+
+                  setChargeCreationMode('without_document');
+                  setShowChargeForm(true);
+
+                  setChargeForm({
+                    ...chargeForm,
+
+                    nomHotel: row.details || '',
+                    fournisseur: row.details || '',
+                    montant: row.montant || '',
+                    date: row.date || ''
+                  });
+                }}
+              >
+                Modifier
+              </Button>
+                      <Button
+                        appearance="danger"
+                        onClick={async () => {
+                          const confirmed = window.confirm(
+                            'Supprimer ce document ?'
+                          );
+
+                          if (!confirmed) return;
+
+                          try {
+                            const res = await deleteMissionDocument({
+                              issueKey: file.sourceIssueKey || mission.issueKey,
+                              attachmentId: file.id
+                            });
+
+                            if (res.success) {
+                              await loadAttachments();
+                              await loadAttachmentAnalyses();
+
+                              window.alert('Document supprimé.');
+                            } else {
+                              window.alert(res.message);
+                            }
+                          } catch (e) {
+                            console.error(e);
+                            window.alert('Erreur suppression.');
+                          }
+                        }}
+                      >
+                        Supprimer
+                      </Button>
+                    </Inline>
                     </Box>
                   </Inline>
                 </Box>
@@ -1515,6 +1562,37 @@ const MissionDetails = ({ mission, onBack }) => {
                       >
                         Télécharger
                       </Button>
+                      <Button
+                      appearance="danger"
+                      onClick={async () => {
+                        const confirmed = window.confirm(
+                          'Supprimer ce document ?'
+                        );
+
+                        if (!confirmed) return;
+
+                        try {
+                          const res = await deleteMissionDocument({
+                            issueKey: file.sourceIssueKey || mission.issueKey,
+                            attachmentId: file.id
+                          });
+
+                          if (res.success) {
+                            await loadAttachments();
+                            await loadAttachmentAnalyses();
+
+                            window.alert('Document supprimé.');
+                          } else {
+                            window.alert(res.message);
+                          }
+                        } catch (e) {
+                          console.error(e);
+                          window.alert('Erreur suppression.');
+                        }
+                      }}
+                    >
+                      Supprimer
+                    </Button>
                     </Inline>
                   </Inline>
                 </Stack>

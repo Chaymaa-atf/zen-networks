@@ -1224,8 +1224,6 @@ resolver.define('getMissionAttachmentAnalyses', async ({ payload }) => {
   try {
     const { issueKey } = payload || {};
 
-    console.log('📥 getMissionAttachmentAnalyses appelé avec issueKey =', issueKey);
-
     if (!issueKey) {
       return {
         success: false,
@@ -1234,23 +1232,15 @@ resolver.define('getMissionAttachmentAnalyses', async ({ payload }) => {
       };
     }
 
-    const issueResp = await api.asApp().requestJira(
-      route`/rest/api/3/issue/${issueKey}?fields=subtasks`
-    );
-
-    if (!issueResp.ok) {
-      const errorText = await issueResp.text();
-      throw new Error(errorText);
-    }
-
-    const issueData = await issueResp.json();
+    const jql = `parent = "${issueKey}"`;
+    const chargesData = await searchIssuesByJql(jql, ['summary']);
 
     const issueKeys = [
       issueKey,
-      ...(issueData.fields?.subtasks || []).map((subtask) => subtask.key)
+      ...(chargesData.issues || []).map((issue) => issue.key)
     ];
 
-    console.log('🎯 Tickets à vérifier =', JSON.stringify(issueKeys));
+    console.log('🎯 Tickets à vérifier analyses =', JSON.stringify(issueKeys));
 
     const allAnalyses = [];
 
@@ -1265,17 +1255,9 @@ resolver.define('getMissionAttachmentAnalyses', async ({ payload }) => {
 
         return {
           ...value,
-
-          // clé exacte KVS
           analysisKey: item.key,
-
-          // ticket où la pièce jointe existe
-          sourceIssueKey: currentIssueKey,
-
-          // mission principale pour calcul total
-          missionIssueKey: issueKey,
-
-          // sécurité
+          sourceIssueKey: value.sourceIssueKey || currentIssueKey,
+          missionIssueKey: value.missionIssueKey || issueKey,
           amount: value.amount || value.montant || '',
           currency: value.currency || value.devise || 'MAD',
           category: value.category || value.type || 'inconnu'
@@ -1285,11 +1267,19 @@ resolver.define('getMissionAttachmentAnalyses', async ({ payload }) => {
       allAnalyses.push(...analyses);
     }
 
-    console.log('✅ Toutes les analyses retournées =', JSON.stringify(allAnalyses));
+    const uniqueAnalyses = Array.from(
+      new Map(
+        allAnalyses.map((item) => [
+          item.analysisKey ||
+            `${item.sourceIssueKey}-${item.attachmentId}-${item.fileName}-${item.date}-${item.amount}`,
+          item
+        ])
+      ).values()
+    );
 
     return {
       success: true,
-      analyses: allAnalyses
+      analyses: uniqueAnalyses
     };
   } catch (error) {
     console.error('❌ Erreur getMissionAttachmentAnalyses:', error);
@@ -2049,6 +2039,8 @@ resolver.define('createManualChargeAnalysis', async ({ payload }) => {
     }
 
     const attachmentId = `manual-${Date.now()}`;
+    const sourceIssueKey = chargeKey || issueKey;
+    const analysisKey = `charge-analysis-${sourceIssueKey}-${attachmentId}`;
 
     const manualAnalysis = {
       attachmentId,
@@ -2058,13 +2050,14 @@ resolver.define('createManualChargeAnalysis', async ({ payload }) => {
       amount: amount || '',
       currency: currency || 'MAD',
       details: details || '',
-      sourceIssueKey: chargeKey || issueKey,
+      sourceIssueKey,
       missionIssueKey: issueKey,
+      analysisKey,
       manual: true,
       createdAt: new Date().toISOString()
     };
 
-    await kvs.set(`charge-analysis-${issueKey}-${attachmentId}`, manualAnalysis);
+    await kvs.set(analysisKey, manualAnalysis);
 
     return {
       success: true,
@@ -2073,6 +2066,7 @@ resolver.define('createManualChargeAnalysis', async ({ payload }) => {
     };
   } catch (error) {
     console.error('Erreur createManualChargeAnalysis:', error);
+
     return {
       success: false,
       message: error.message
@@ -2368,6 +2362,58 @@ const ordreNumber = `OM/${currentYear}/${String(counter).padStart(3, '0')}`;
     };
   } catch (error) {
     console.error('Erreur generateOrdreMissionPdf:', error);
+
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+});
+
+resolver.define('deleteMissionDocument', async ({ payload }) => {
+  try {
+    const { issueKey, attachmentId } = payload || {};
+
+    if (!issueKey || !attachmentId) {
+      return {
+        success: false,
+        message: 'issueKey ou attachmentId manquant.'
+      };
+    }
+
+    // supprimer pièce jointe Jira
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/attachment/${attachmentId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          Accept: 'application/json'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      console.error('DELETE ATTACHMENT ERROR:', errorText);
+
+      return {
+        success: false,
+        message: errorText
+      };
+    }
+
+    // supprimer analyse liée
+    const analysisKey1 = `charge-analysis-${issueKey}-${attachmentId}`;
+
+    await kvs.delete(analysisKey1);
+
+    return {
+      success: true,
+      message: 'Document supprimé avec succès.'
+    };
+  } catch (error) {
+    console.error('deleteMissionDocument error:', error);
 
     return {
       success: false,

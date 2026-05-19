@@ -154,3 +154,6 @@ export const saveOrdreMissionConfig = async (payload) => {
 export const generateOrdreMissionPdf = async (payload) => {
   return await invoke('generateOrdreMissionPdf', payload);
 };
+export const deleteMissionDocument = async (payload) => {
+  return await invoke('deleteMissionDocument', payload);
+};
