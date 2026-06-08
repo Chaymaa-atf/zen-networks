@@ -125,7 +125,6 @@ const OrdreMissionForm = ({ mission, analyses = [], onBack }) => {
 
   const [form, setForm] = useState({
     nomPrenom: '',
-    fonction: 'Collaborateur',
     cin: '',
     natureMission: '',
     lieuMission: '',
@@ -155,7 +154,6 @@ const OrdreMissionForm = ({ mission, analyses = [], onBack }) => {
   useEffect(() => {
     setForm({
       nomPrenom: `${mission?.prenomEmploye || ''} ${mission?.nomEmploye || ''}`.trim(),
-      fonction: 'Collaborateur',
       cin: '',
       natureMission: mission?.titre || '',
       lieuMission: mission?.ville || '',
@@ -255,7 +253,7 @@ const getLogoBase64 = async () => {
 
       <Box xcss={cardStyles}>
         <Stack space="space.150">
-          <Heading size="medium">Informations collaborateur</Heading>
+          <Heading size="medium">Informations personnelles</Heading>
 
           <Label>Nom et prénom</Label>
           <Textfield
@@ -263,11 +261,7 @@ const getLogoBase64 = async () => {
             onChange={(e) => updateField('nomPrenom', e.target.value)}
           />
 
-          <Label>Fonction</Label>
-          <Textfield
-            value={form.fonction}
-            onChange={(e) => updateField('fonction', e.target.value)}
-          />
+         
 
           <Label>CIN</Label>
           <Textfield

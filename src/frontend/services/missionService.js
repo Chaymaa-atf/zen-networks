@@ -157,3 +157,6 @@ export const generateOrdreMissionPdf = async (payload) => {
 export const deleteMissionDocument = async (payload) => {
   return await invoke('deleteMissionDocument', payload);
 };
+export const getJiraUsers = async () => {
+  return await invoke('getJiraUsers');
+};

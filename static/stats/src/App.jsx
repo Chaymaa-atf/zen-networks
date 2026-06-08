@@ -32,6 +32,11 @@ const convertToDH = (amount, currency) => {
   return amount;
 };
 
+const getAmountDH = (item) => {
+  const amount = parseAmount(item.amount || item.montant);
+  return convertToDH(amount, item.currency || item.devise);
+};
+
 const renderInsideLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
   const RADIAN = Math.PI / 180;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
@@ -110,8 +115,7 @@ function App() {
       .filter((a) => a.missionIssueKey === selectedMissionKey)
       .forEach((a) => {
         const category = normalizeCategory(a.category || a.type);
-        const amount = parseAmount(a.amount || a.montant);
-        const amountDH = convertToDH(amount, a.currency || a.devise);
+        const amountDH = getAmountDH(a);
 
         if (map[category] !== undefined) {
           map[category] += amountDH;
@@ -145,9 +149,111 @@ function App() {
 
   const totalMission = pieData.reduce((sum, item) => sum + item.value, 0);
 
+  const kpiData = useMemo(() => {
+    const totalMissions = missions.length;
+
+    const totalDepenses = analyses.reduce((sum, item) => {
+      return sum + getAmountDH(item);
+    }, 0);
+
+    const missionTotals = missions.map((mission) => {
+      const total = analyses
+        .filter((a) =>
+          a.missionIssueKey === mission.issueKey ||
+          a.issueKey === mission.issueKey ||
+          a.missionId === mission.id
+        )
+        .reduce((sum, item) => sum + getAmountDH(item), 0);
+
+      return {
+        name: mission.titre || mission.issueKey || 'Mission',
+        total
+      };
+    });
+
+    const missionPlusChere = missionTotals
+      .sort((a, b) => b.total - a.total)[0];
+    const missionMoinsChere = missions
+  .map((mission) => {
+    const total = analyses
+      .filter((a) => a.missionIssueKey === mission.issueKey)
+      .reduce((sum, item) => {
+        const amount = parseAmount(item.amount || item.montant);
+        const amountDH = convertToDH(
+          amount,
+          item.currency || item.devise
+        );
+
+        return sum + amountDH;
+      }, 0);
+
+    return {
+      name: mission.titre || mission.issueKey || 'Mission',
+      total
+    };
+  })
+  .sort((a, b) => a.total - b.total)[0];
+
+    const employeeTotals = missions.reduce((acc, mission) => {
+      const employee =
+        `${mission.prenomEmploye || ''} ${mission.nomEmploye || ''}`.trim() ||
+        'Employé inconnu';
+
+      acc[employee] = (acc[employee] || 0) + 1;
+      return acc;
+    }, {});
+
+
+    return {
+      totalMissions,
+      totalDepenses,
+      missionPlusChere,
+       missionMoinsChere
+    };
+  }, [missions, analyses]);
+
   return (
     <div style={{ padding: 24, fontFamily: 'Arial, sans-serif', color: '#172B4D' }}>
       <h2 style={{ textAlign: 'center' }}>Statistiques des missions</h2>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 16,
+          marginBottom: 28
+        }}
+      >
+        <div style={kpiCardStyle}>
+          <p style={kpiLabelStyle}>Total missions</p>
+          <h2 style={kpiValueStyle}>{kpiData.totalMissions}</h2>
+        </div>
+
+        <div style={kpiCardStyle}>
+          <p style={kpiLabelStyle}>Total dépenses</p>
+          <h2 style={kpiValueStyle}>{kpiData.totalDepenses.toFixed(2)} DH</h2>
+        </div>
+
+        <div style={kpiCardStyle}>
+          <p style={kpiLabelStyle}>Mission la plus chère</p>
+          <h2 style={kpiSmallValueStyle}>
+            {kpiData.missionPlusChere?.name || '—'}
+          </h2>
+          <span style={kpiSubStyle}>
+            {(kpiData.missionPlusChere?.total || 0).toFixed(2)} DH
+          </span>
+        </div>
+
+        <div style={kpiCardStyle}>
+        <p style={kpiLabelStyle}>Mission moins chère</p>
+        <h2 style={kpiSmallValueStyle}>
+          {kpiData.missionMoinsChere?.name || '—'}
+        </h2>
+        <span style={kpiSubStyle}>
+          {(kpiData.missionMoinsChere?.total || 0).toFixed(2)} DH
+        </span>
+      </div>
+      </div>
 
       <div style={{ marginBottom: 20, textAlign: 'center' }}>
         <label>
@@ -182,7 +288,6 @@ function App() {
         ) : (
           <ResponsiveContainer width="100%" height={380}>
             <PieChart>
-              {/* Cercle principal avec % à l'intérieur */}
               <Pie
                 data={pieData}
                 dataKey="value"
@@ -201,7 +306,6 @@ function App() {
                 ))}
               </Pie>
 
-              {/* Deuxième Pie seulement pour afficher texte + ligne dehors */}
               <Pie
                 data={pieData}
                 dataKey="value"
@@ -274,5 +378,36 @@ function App() {
     </div>
   );
 }
+
+const kpiCardStyle = {
+  background: '#FFFFFF',
+  border: '1px solid #E5E7EB',
+  borderRadius: 16,
+  padding: 18,
+  boxShadow: '0 8px 20px rgba(0,0,0,0.05)'
+};
+
+const kpiLabelStyle = {
+  margin: 0,
+  color: '#6B7280',
+  fontSize: 14
+};
+
+const kpiValueStyle = {
+  margin: '10px 0 0',
+  fontSize: 24,
+  color: '#172B4D'
+};
+
+const kpiSmallValueStyle = {
+  margin: '10px 0 4px',
+  fontSize: 18,
+  color: '#172B4D'
+};
+
+const kpiSubStyle = {
+  color: '#6B7280',
+  fontSize: 13
+};
 
 export default App;

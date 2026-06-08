@@ -349,12 +349,13 @@ resolver.define('createMission', async ({ payload }) => {
       dateRetour,
       motif,
       createdBy,
-      createdByName
+      createdByName,
+      employeeAccountId,
+      employeeDisplayName
     } = payload || {};
 
     if (
       !nomEmploye ||
-      !prenomEmploye ||
       !titre ||
       !destination ||
       !pays ||
@@ -376,22 +377,27 @@ resolver.define('createMission', async ({ payload }) => {
         message: 'La date de retour doit être après la date de départ.'
       };
     }
+
     const config = await getAppConfigOrDefault();
+
     const jiraPayload = {
       fields: {
-       project: {
+        project: {
           key: config.projectKey
         },
         issuetype: {
           name: ISSUE_TYPE_NAME
         },
+        assignee: employeeAccountId
+          ? { id: employeeAccountId }
+          : undefined,
         summary: titre,
         description: {
           type: 'doc',
           version: 1,
           content: [
             toAdfParagraph("Mission créée depuis l'application Forge"),
-            toAdfParagraph(`Employé: ${prenomEmploye} ${nomEmploye}`),
+            toAdfParagraph(`Employé: ${employeeDisplayName || `${prenomEmploye || ''} ${nomEmploye || ''}`}`),
             toAdfParagraph(`Destination: ${destination}`),
             toAdfParagraph(`Pays: ${pays}`),
             toAdfParagraph(`Ville: ${ville}`),
@@ -430,6 +436,8 @@ resolver.define('createMission', async ({ payload }) => {
 
     const mission = {
       id: missionId,
+      assignedToId: employeeAccountId || createdBy,
+      assignedToName: employeeDisplayName || `${prenomEmploye || ''} ${nomEmploye || ''}`.trim(),
       nomEmploye,
       prenomEmploye,
       titre,
@@ -479,7 +487,7 @@ resolver.define('getMissions', async ({ payload }) => {
 
     const filteredMissions = isAdmin
       ? missions
-      : missions.filter((mission) => mission.createdBy === userId);
+      : missions.filter((mission) => mission.assignedToId === userId);
 
     filteredMissions.sort(
       (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
@@ -805,6 +813,48 @@ resolver.define('uploadAttachment', async ({ payload }) => {
   try {
     const { issueKey, fileName, mimeType, base64Content } = payload;
 
+    if (!issueKey || !fileName || !base64Content) {
+      return {
+        success: false,
+        message: 'issueKey, fileName ou fichier manquant.'
+      };
+    }
+
+    // Vérifier si le même fichier existe déjà dans ce ticket Jira
+    const existingResponse = await api.asApp().requestJira(
+      route`/rest/api/3/issue/${issueKey}?fields=attachment`,
+      {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json'
+        }
+      }
+    );
+
+    if (!existingResponse.ok) {
+      const errorText = await existingResponse.text();
+      return {
+        success: false,
+        message: `Impossible de vérifier les doublons: ${errorText}`
+      };
+    }
+
+    const existingData = await existingResponse.json();
+    const existingAttachments = existingData.fields?.attachment || [];
+
+    const duplicate = existingAttachments.find((file) =>
+      String(file.filename || '').trim().toLowerCase() ===
+      String(fileName || '').trim().toLowerCase()
+    );
+
+    if (duplicate) {
+      return {
+        success: false,
+        duplicate: true,
+        message: 'Ce document existe déjà dans cette mission.'
+      };
+    }
+
     const buffer = Buffer.from(base64Content, 'base64');
 
     const form = new FormData();
@@ -818,7 +868,7 @@ resolver.define('uploadAttachment', async ({ payload }) => {
           'X-Atlassian-Token': 'no-check',
           ...form.getHeaders()
         },
-        body: form.getBuffer() // ✅ TRÈS IMPORTANT
+        body: form.getBuffer()
       }
     );
 
@@ -1750,13 +1800,13 @@ resolver.define('saveAppConfig', async ({ payload, context }) => {
       : projectName || 'Gestion des missions';
 
     const config = {
-      configured: true,
-      mode,
-      projectKey: finalProjectKey,
-      projectName: finalProjectName,
-      adminIds: [context.accountId],
-      createdAt: new Date().toISOString()
-    };
+  configured: true,
+  mode,
+  projectKey: finalProjectKey,
+  projectName: finalProjectName,
+  adminIds: context?.accountId ? [context.accountId] : [],
+  createdAt: new Date().toISOString()
+};
 
     await kvs.set('app-config', config);
 
@@ -1939,85 +1989,7 @@ resolver.define('removeAdminUser', async ({ payload, context }) => {
     };
   }
 });
-resolver.define('searchJiraUsersForAdmin', async ({ payload, context }) => {
-  try {
-    const { query } = payload || {};
 
-    if (!query || query.trim().length < 2) {
-      return {
-        success: false,
-        message: 'Saisir au moins 2 caractères.',
-        users: []
-      };
-    }
-
-    const { config, isAdmin } = await isCurrentUserAdmin(context.accountId);
-
-    if (!isAdmin) {
-      return {
-        success: false,
-        message: 'Accès refusé. Réservé aux administrateurs.',
-        users: []
-      };
-    }
-
-    const response = await api.asApp().requestJira(
-      route`/rest/api/3/users/search?query=${query}`,
-      {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json'
-        }
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return {
-        success: false,
-        message: errorText,
-        users: []
-      };
-    }
-
-    const data = await response.json();
-
-  const q = String(query || '').toLowerCase().trim();
-
-const users = (data || [])
-  .filter((user) => {
-    const name = String(user.displayName || '').toLowerCase();
-
-    return (
-      user.accountType === 'atlassian' &&
-      user.active === true &&
-      name.includes(q) &&
-      !name.includes('jira') &&
-      !name.includes('automation') &&
-      !name.includes('assist') &&
-      !name.includes('app')
-    );
-  })
-  .map((user) => ({
-    accountId: user.accountId,
-    displayName: user.displayName,
-    emailAddress: user.emailAddress || '',
-    avatarUrl: user.avatarUrls?.['48x48'] || ''
-  }))
-  .slice(0, 10);
-
-    return {
-      success: true,
-      users
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: error.message,
-      users: []
-    };
-  }
-});
 resolver.define('createManualChargeAnalysis', async ({ payload }) => {
   try {
     const {
@@ -2421,4 +2393,60 @@ resolver.define('deleteMissionDocument', async ({ payload }) => {
     };
   }
 });
+resolver.define('getJiraUsers', async () => {
+  try {
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/users/search?query=`,
+      {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      return {
+        success: false,
+        users: [],
+        message: errorText
+      };
+    }
+
+    const data = await response.json();
+
+  const users = (data || [])
+  .filter((user) => {
+    const name = String(user.displayName || '').toLowerCase();
+
+    return (
+      user.accountType === 'atlassian' &&
+      !name.includes('jira') &&
+      !name.includes('automation') &&
+      !name.includes('assist') &&
+      !name.includes('widget') &&
+      !name.includes('slack') &&
+      !name.includes('atlas')
+    );
+  })
+  .map((user) => ({
+  accountId: user.accountId,
+  displayName: user.displayName,
+  emailAddress: user.emailAddress || ''
+}));
+    return {
+      success: true,
+      users
+    };
+  } catch (error) {
+    return {
+      success: false,
+      users: [],
+      message: error.message
+    };
+  }
+});
+
 export const handler = resolver.getDefinitions();

@@ -1,11 +1,47 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Box, Button, Heading, Inline, Stack, Text, Select, Textfield
+  Box,
+  Button,
+  Heading,
+  Inline,
+  Stack,
+  Text,
+  Select,
+  Textfield,
+  Lozenge,
 } from '@forge/react';
 import { xcss } from '@forge/react';
 
+/* =========================
+   DESIGN PRO FORGE
+========================= */
+
+const pageStyles = xcss({
+  padding: 'space.400',
+  backgroundColor: 'color.background.neutral.subtle',
+});
+
+const cardStyles = xcss({
+  backgroundColor: 'elevation.surface',
+  borderRadius: 'border.radius.300',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderColor: 'color.border',
+  padding: 'space.400',
+});
+
+const filterBarStyles = xcss({
+  padding: 'space.300',
+  backgroundColor: 'elevation.surface',
+  borderRadius: 'border.radius.300',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderColor: 'color.border',
+});
+
 const tableWrapperStyles = xcss({
-  borderRadius: 'border.radius.200',
+  backgroundColor: 'elevation.surface',
+  borderRadius: 'border.radius.300',
   borderWidth: 'border.width',
   borderStyle: 'solid',
   borderColor: 'color.border',
@@ -13,48 +49,74 @@ const tableWrapperStyles = xcss({
 });
 
 const headerRowStyles = xcss({
-  backgroundColor: 'color.background.neutral',
-  paddingBlock: 'space.100',
-  paddingInline: 'space.200',
-  borderBottomWidth: 'border.width',
-  borderBottomStyle: 'solid',
-  borderBottomColor: 'color.border',
+  backgroundColor: 'color.background.discovery',
+  paddingBlock: 'space.200',
+  paddingInline: 'space.250',
 });
 
 const rowStyles = xcss({
-  paddingBlock: 'space.150',
-  paddingInline: 'space.200',
+  paddingBlock: 'space.200',
+  paddingInline: 'space.250',
   borderBottomWidth: 'border.width',
   borderBottomStyle: 'solid',
   borderBottomColor: 'color.border',
+  backgroundColor: 'elevation.surface',
 });
 
 const totalRowStyles = xcss({
-  marginTop: 'space.100',
-  paddingBlock: 'space.150',
-  paddingInline: 'space.200',
+  marginTop: 'space.200',
+  paddingBlock: 'space.300',
+  paddingInline: 'space.400',
   backgroundColor: 'color.background.discovery',
-  borderRadius: 'border.radius.200',
+  borderRadius: 'border.radius.300',
   borderWidth: 'border.width',
   borderStyle: 'solid',
   borderColor: 'color.border.discovery',
 });
 
-const titleStyles = xcss({ fontWeight: 'font.weight.semibold', color: 'color.text' });
-const subtitleStyles = xcss({ color: 'color.text.subtlest', fontSize: '12px' });
-const descriptionStyles = xcss({ color: 'color.text.subtle', fontSize: '12px' });
+const titleStyles = xcss({
+  fontWeight: 'font.weight.semibold',
+  color: 'color.text',
+});
 
-const filterBarStyles = xcss({
-  padding: 'space.200',
-  backgroundColor: 'color.background.neutral.subtle',
-  borderRadius: 'border.radius.200',
+const headerTextStyles = xcss({
+  color: 'color.text.inverse',
+  fontSize: '12px',
+  fontWeight: 'font.weight.semibold',
+});
+
+const subtitleStyles = xcss({
+  color: 'color.text.subtle',
+  fontSize: '12px',
+  fontWeight: 'font.weight.semibold',
+});
+
+const textSmallStyles = xcss({
+  color: 'color.text.subtle',
+  fontSize: '12px',
+});
+
+const amountStyles = xcss({
+  fontWeight: 'font.weight.bold',
+  color: 'color.text.discovery',
+});
+
+const filterSelectBoxStyles = xcss({ width: '185px' });
+const filterInputBoxStyles = xcss({ width: '280px' });
+
+const emptyStateStyles = xcss({
+  padding: 'space.500',
+  textAlign: 'center',
+  backgroundColor: 'elevation.surface',
+  borderRadius: 'border.radius.300',
   borderWidth: 'border.width',
   borderStyle: 'solid',
   borderColor: 'color.border',
 });
 
-const filterSelectBoxStyles = xcss({ width: '180px' });
-const filterInputBoxStyles = xcss({ width: '260px' });
+/* =========================
+   LOGIQUE EXISTANTE
+========================= */
 
 const normalizeText = (value) =>
   (value || '')
@@ -106,11 +168,6 @@ const convertToDH = (amount, currency) => {
 
 const formatAmount = (amount) => `${Number(amount || 0).toFixed(2)} DH`;
 
-const truncateText = (text, maxLength = 45) => {
-  if (!text) return '';
-  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
-};
-
 const getAnalysisUniqueKey = (charge) => {
   return (
     charge.analysisKey ||
@@ -119,12 +176,19 @@ const getAnalysisUniqueKey = (charge) => {
   );
 };
 
-const SortHeader = ({ label, column, sortConfig, onSort }) => {
+const getStatusAppearance = (status) => {
+  
+  if (status === 'Validée') return 'success';
+  if (status === 'Refusée') return 'removed';
+  return 'inprogress';
+};
+
+const SortHeader = ({ label, column, sortConfig, onSort, inverse = false }) => {
   const isActive = sortConfig.column === column;
 
   return (
     <Inline space="space.050" alignBlock="center">
-      <Text xcss={subtitleStyles}>{label}</Text>
+      <Text xcss={inverse ? headerTextStyles : subtitleStyles}>{label}</Text>
       <Button appearance="subtle" spacing="compact" onClick={() => onSort(column)}>
         {isActive ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
       </Button>
@@ -296,231 +360,235 @@ const MissionList = ({
 
   if (loading) {
     return (
-      <Box xcss={xcss({ padding: 'space.400', textAlign: 'center' })}>
-        <Text color="color.text.subtlest">Chargement des missions...</Text>
+      <Box xcss={pageStyles}>
+        <Box xcss={cardStyles}>
+          <Text color="color.text.subtlest">Chargement des missions...</Text>
+        </Box>
       </Box>
     );
   }
 
   return (
-    <Stack space="space.300">
-      <Inline spread="space-between" alignBlock="center">
-        <Stack space="space.050">
-          <Heading size="large">Liste Missions</Heading>
-          <Text color="color.text.subtlest">
-            {filteredMissions.length} mission{filteredMissions.length !== 1 ? 's' : ''} affichée{filteredMissions.length !== 1 ? 's' : ''}
-          </Text>
-        </Stack>
+    <Box xcss={pageStyles}>
+      <Stack space="space.300">
 
-        <Button appearance="primary" onClick={onCreateMission}>
-          + Créer une mission
-        </Button>
-      </Inline>
+        <Box xcss={cardStyles}>
+          <Inline spread="space-between" alignBlock="center">
+            <Stack space="space.050">
+              <Heading size="large">Liste des missions</Heading>
+              <Text color="color.text.subtlest">
+                {filteredMissions.length} mission{filteredMissions.length !== 1 ? 's' : ''} affichée{filteredMissions.length !== 1 ? 's' : ''}
+              </Text>
+            </Stack>
 
-      <Box xcss={filterBarStyles}>
-        <Inline space="space.150" alignBlock="end">
-          <Box xcss={filterSelectBoxStyles}>
-            <Text xcss={subtitleStyles}>Filtrer par</Text>
-            <Select options={filterOptions} value={filterType} onChange={(value) => setFilterType(value)} />
-          </Box>
-
-          <Box xcss={filterInputBoxStyles}>
-            <Text xcss={subtitleStyles}>Recherche</Text>
-            <Textfield
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder={
-                filterType?.value === 'nom'
-                  ? 'Rechercher par nom...'
-                  : filterType?.value === 'date'
-                  ? 'Rechercher par date...'
-                  : 'Rechercher par objet...'
-              }
-            />
-          </Box>
-
-          <Box xcss={filterSelectBoxStyles}>
-            <Text xcss={subtitleStyles}>Type dépense</Text>
-            <Select options={expenseFilterOptions} value={expenseFilter} onChange={(value) => setExpenseFilter(value)} />
-          </Box>
-
-          <Button
-            appearance="subtle"
-            onClick={() => {
-              setSearchTerm('');
-              setFilterType(null);
-              setExpenseFilter(expenseFilterOptions[0]);
-              setSortConfig({ column: null, direction: null });
-            }}
-          >
-            Réinitialiser
-          </Button>
-        </Inline>
-      </Box>
-
-      {filteredMissions.length === 0 ? (
-        <Box
-          xcss={xcss({
-            padding: 'space.400',
-            textAlign: 'center',
-            backgroundColor: 'color.background.neutral.subtle',
-            borderRadius: 'border.radius.200',
-            borderWidth: 'border.width',
-            borderStyle: 'solid',
-            borderColor: 'color.border',
-          })}
-        >
-          <Text color="color.text.subtlest">Aucune mission trouvée pour ce filtre.</Text>
+            <Button appearance="primary" onClick={onCreateMission}>
+              + Créer une mission
+            </Button>
+          </Inline>
         </Box>
-      ) : (
-        <Stack space="space.100">
-          <Box xcss={tableWrapperStyles}>
-            <Box xcss={headerRowStyles}>
-              <Inline spread="space-between" alignBlock="center">
-                <Box xcss={xcss({ width: '95px' })}>
-                  <Text xcss={subtitleStyles}>IDENTIFIANT</Text>
-                </Box>
 
-                <Box xcss={xcss({ width: '150px' })}>
-                  <SortHeader label="NOM & PRÉNOM" column="nom" sortConfig={sortConfig} onSort={handleSort} />
-                </Box>
-
-                <Box xcss={xcss({ width: '140px' })}>
-                  <SortHeader label="OBJET" column="objet" sortConfig={sortConfig} onSort={handleSort} />
-                </Box>
-
-                <Box xcss={xcss({ width: '180px' })}>
-                  <Text xcss={subtitleStyles}>DESCRIPTION</Text>
-                </Box>
-
-                <Box xcss={xcss({ width: '145px' })}>
-                  <Text xcss={subtitleStyles}>DESTINATION</Text>
-                </Box>
-
-                <Box xcss={xcss({ width: '170px' })}>
-                  <SortHeader label="DATES" column="date" sortConfig={sortConfig} onSort={handleSort} />
-                </Box>
-
-                <Box xcss={xcss({ width: '170px' })}>
-                  <Text xcss={subtitleStyles}>STATUT</Text>
-                </Box>
-
-                <Box xcss={xcss({ width: '110px', textAlign: 'right' })}>
-                  <SortHeader label={amountColumnLabel} column="montant" sortConfig={sortConfig} onSort={handleSort} />
-                </Box>
-
-                <Box xcss={xcss({ width: '340px', textAlign: 'right' })}>
-                  <Text xcss={subtitleStyles}>ACTION</Text>
-                </Box>
-              </Inline>
+        <Box xcss={filterBarStyles}>
+          <Inline space="space.200" alignBlock="end" wrap="wrap">
+            <Box xcss={filterSelectBoxStyles}>
+              <Text xcss={subtitleStyles}>Filtrer par</Text>
+              <Select options={filterOptions} value={filterType} onChange={(value) => setFilterType(value)} />
             </Box>
 
-            {filteredMissions.map((mission, index) => (
-              <Box key={mission.id} xcss={rowStyles}>
+            <Box xcss={filterInputBoxStyles}>
+              <Text xcss={subtitleStyles}>Recherche</Text>
+              <Textfield
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder={
+                  filterType?.value === 'nom'
+                    ? 'Rechercher par nom...'
+                    : filterType?.value === 'date'
+                    ? 'Rechercher par date...'
+                    : 'Rechercher par objet...'
+                }
+              />
+            </Box>
+
+            <Box xcss={filterSelectBoxStyles}>
+              <Text xcss={subtitleStyles}>Type dépense</Text>
+              <Select options={expenseFilterOptions} value={expenseFilter} onChange={(value) => setExpenseFilter(value)} />
+            </Box>
+
+            <Button
+              appearance="subtle"
+              onClick={() => {
+                setSearchTerm('');
+                setFilterType(null);
+                setExpenseFilter(expenseFilterOptions[0]);
+                setSortConfig({ column: null, direction: null });
+              }}
+            >
+              Réinitialiser
+            </Button>
+          </Inline>
+        </Box>
+
+        {filteredMissions.length === 0 ? (
+          <Box xcss={emptyStateStyles}>
+            <Heading size="small">Aucune mission trouvée</Heading>
+          </Box>
+        ) : (
+          <Stack space="space.200">
+
+            <Box xcss={tableWrapperStyles}>
+              <Box xcss={headerRowStyles}>
                 <Inline spread="space-between" alignBlock="center">
-                  <Box xcss={xcss({ width: '95px' })}>
-                    <Text xcss={titleStyles}>Mission {index + 1}</Text>
+                  <Box xcss={xcss({ width: '55px' })}>
+                    <Text xcss={headerTextStyles}>N°</Text>
+                  </Box>
+
+                  <Box xcss={xcss({ width: '165px' })}>
+                    <SortHeader label="Employé" column="nom" sortConfig={sortConfig} onSort={handleSort} inverse />
+                  </Box>
+
+                  <Box xcss={xcss({ width: '160px' })}>
+                    <SortHeader label="Objet" column="objet" sortConfig={sortConfig} onSort={handleSort} inverse />
+                  </Box>
+
+                  <Box xcss={xcss({ width: '165px' })}>
+                    <Text xcss={headerTextStyles}>Destination</Text>
+                  </Box>
+
+                  <Box xcss={xcss({ width: '175px' })}>
+                    <SortHeader label="Dates" column="date" sortConfig={sortConfig} onSort={handleSort} inverse />
                   </Box>
 
                   <Box xcss={xcss({ width: '150px' })}>
-                    <Text xcss={titleStyles}>
-                      {`${mission.prenomEmploye || ''} ${mission.nomEmploye || ''}`.trim() || '—'}
-                    </Text>
+                    <Text xcss={headerTextStyles}>Statut</Text>
                   </Box>
 
-                  <Box xcss={xcss({ width: '140px' })}>
-                    <Text xcss={titleStyles}>{mission.titre || '—'}</Text>
+                  <Box xcss={xcss({ width: '125px', textAlign: 'right' })}>
+                    <SortHeader label={amountColumnLabel} column="montant" sortConfig={sortConfig} onSort={handleSort} inverse />
                   </Box>
 
-                  <Box xcss={xcss({ width: '180px' })}>
-                    <Text xcss={descriptionStyles}>{truncateText(mission.motif || '—')}</Text>
+                  <Box xcss={xcss({ width: '235px', textAlign: 'right' })}>
+                    <Text xcss={headerTextStyles}>Actions</Text>
                   </Box>
-
-                  <Box xcss={xcss({ width: '145px' })}>
-                    <Text color="color.text.subtle">
-                      {`${mission.ville || ''}${mission.ville && mission.pays ? ', ' : ''}${mission.pays || ''}` || '—'}
-                    </Text>
-                  </Box>
-
-                  <Box xcss={xcss({ width: '170px' })}>
-                    <Text xcss={subtitleStyles}>
-                      {mission.dateDepart || '—'} → {mission.dateRetour || '—'}
-                    </Text>
-                  </Box>
-
-                  <Box xcss={xcss({ width: '125px' })}>
-  {userRole === 'admin' ? (
-    <Select
-      options={statusOptions}
-      value={
-        statusOptions.find((option) => option.value === getMissionStatus(mission)) ||
-        statusOptions[0]
-      }
-      onChange={(value) => handleStatusChange(mission, value)}
-    />
-  ) : (
-    <Text>{getMissionStatus(mission)}</Text>
-  )}
-</Box>
-
-                  <Box xcss={xcss({ width: '110px', textAlign: 'right' })}>
-                    <Text xcss={titleStyles}>{formatAmount(getMissionAmount(mission))}</Text>
-                  </Box>
-
-                  <Box xcss={xcss({ width: '340px', textAlign: 'right' })}>
-  <Inline space="space.050" alignBlock="center">
-
-    <Button
-      appearance="subtle"
-      spacing="compact"
-      onClick={() => onViewDetails(mission.id)}
-    >
-      Détails
-    </Button>
-
-    <Button
-      appearance="primary"
-      spacing="compact"
-      onClick={() => onEditMission && onEditMission(mission.id)}
-    >
-      Modifier
-    </Button>
-
-    {userRole === 'admin' && (
-      <>
-        <Button
-          appearance="warning"
-          spacing="compact"
-          onClick={() => handleGenerateOrdreMission(mission.id)}
-        >
-          Ordre
-        </Button>
-
-        <Button
-          appearance="danger"
-          spacing="compact"
-          onClick={() => onDeleteMission && onDeleteMission(mission.id)}
-        >
-          Supprimer
-        </Button>
-      </>
-    )}
-  </Inline>
-</Box>
                 </Inline>
               </Box>
-            ))}
-          </Box>
 
-          <Box xcss={totalRowStyles}>
-            <Inline spread="space-between" alignBlock="center">
-              <Text xcss={titleStyles}>TOTAL GLOBAL</Text>
-              <Text xcss={titleStyles}>{formatAmount(totalAllMissions)}</Text>
-            </Inline>
-          </Box>
-        </Stack>
-      )}
-    </Stack>
+              {filteredMissions.map((mission, index) => {
+                const status = getMissionStatus(mission);
+
+                return (
+                  <Box key={mission.id} xcss={rowStyles}>
+                    <Inline spread="space-between" alignBlock="center">
+
+                      <Box xcss={xcss({ width: '55px' })}>
+                        <Text xcss={textSmallStyles}>#{index + 1}</Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '165px' })}>
+                        <Text xcss={titleStyles}>
+                          {`${mission.prenomEmploye || ''} ${mission.nomEmploye || ''}`.trim() || '—'}
+                        </Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '160px' })}>
+                        <Text xcss={titleStyles}>{mission.titre || '—'}</Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '165px' })}>
+                        <Text xcss={textSmallStyles}>
+                          {`${mission.ville || ''}${mission.ville && mission.pays ? ', ' : ''}${mission.pays || ''}` || '—'}
+                        </Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '175px' })}>
+                        <Text xcss={textSmallStyles}>
+                          {mission.dateDepart || '—'} → {mission.dateRetour || '—'}
+                        </Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '150px' })}>
+                        {userRole === 'admin' ? (
+                          <Select
+                            options={statusOptions}
+                            value={
+                              statusOptions.find((option) => option.value === status) ||
+                              statusOptions[0]
+                            }
+                            onChange={(value) => handleStatusChange(mission, value)}
+                          />
+                        ) : (
+                          <Lozenge appearance={getStatusAppearance(status)}>
+                            {status}
+                          </Lozenge>
+                        )}
+                      </Box>
+
+                      <Box xcss={xcss({ width: '125px', textAlign: 'right' })}>
+                        <Text xcss={amountStyles}>{formatAmount(getMissionAmount(mission))}</Text>
+                      </Box>
+
+                      <Box xcss={xcss({ width: '235px', textAlign: 'right' })}>
+                        <Inline space="space.050" alignBlock="center">
+                          <Button
+                            appearance="subtle"
+                            spacing="compact"
+                            onClick={() => onViewDetails(mission.id)}
+                          >
+                            Détails
+                          </Button>
+
+                          {userRole === 'admin' && (
+                            <Button
+                              appearance="primary"
+                              spacing="compact"
+                              onClick={() => handleGenerateOrdreMission(mission.id)}
+                            >
+                              Ordre
+                            </Button>
+                          )}
+
+                          <Button
+                            appearance="subtle"
+                            spacing="compact"
+                            onClick={() => onEditMission && onEditMission(mission.id)}
+                          >
+                            ✏️
+                          </Button>
+
+                          {userRole === 'admin' && (
+                            <Button
+                              appearance="subtle"
+                              spacing="compact"
+                              onClick={() => onDeleteMission && onDeleteMission(mission.id)}
+                            >
+                              🗑️
+                            </Button>
+                          )}
+                        </Inline>
+                      </Box>
+
+                    </Inline>
+                  </Box>
+                );
+              })}
+            </Box>
+
+            <Box xcss={totalRowStyles}>
+              <Inline spread="space-between" alignBlock="center">
+                <Stack space="space.025">
+                  <Text xcss={subtitleStyles}>Total global</Text>
+                  <Text color="color.text.subtle">
+                    {filteredMissions.length} mission{filteredMissions.length !== 1 ? 's' : ''} affichée{filteredMissions.length !== 1 ? 's' : ''}
+                  </Text>
+                </Stack>
+
+                <Heading size="large">{formatAmount(totalAllMissions)}</Heading>
+              </Inline>
+            </Box>
+
+          </Stack>
+        )}
+      </Stack>
+    </Box>
   );
 };
 

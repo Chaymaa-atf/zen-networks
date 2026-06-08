@@ -55,6 +55,8 @@ const MissionForm = ({ onSubmit, onCancel, initialValues, isEditMode = false }) 
       const dateRetour = normalizeEmpty(data.dateRetour);
       const motif = normalizeEmpty(data.motif);
 
+      const oldTitre = initialValues?.titre || initialValues?.objet || '';
+
       if (nomEmploye !== undefined && nomEmploye !== initialValues?.nomEmploye) {
         payload.nomEmploye = nomEmploye;
       }
@@ -63,8 +65,9 @@ const MissionForm = ({ onSubmit, onCancel, initialValues, isEditMode = false }) 
         payload.prenomEmploye = prenomEmploye;
       }
 
-      if (titre !== undefined && titre !== initialValues?.titre) {
+      if (titre !== undefined && titre !== oldTitre) {
         payload.titre = titre;
+        payload.objet = titre;
       }
 
       if (pays !== undefined && pays !== initialValues?.pays) {
@@ -94,7 +97,8 @@ const MissionForm = ({ onSubmit, onCancel, initialValues, isEditMode = false }) 
 
     onSubmit({
       ...data,
-      destination: data.ville
+      objet: data.titre,
+      destination: data.ville,
     });
   };
 
@@ -114,7 +118,6 @@ const MissionForm = ({ onSubmit, onCancel, initialValues, isEditMode = false }) 
       <Box xcss={cardStyles}>
         <Form onSubmit={handleSubmit(handleFormSubmit)}>
           <Stack space="space.200">
-
             <FormSection title="Employé concerné">
               <Inline space="space.150" alignBlock="start">
                 <Box xcss={xcss({ flex: '1' })}>
@@ -144,12 +147,12 @@ const MissionForm = ({ onSubmit, onCancel, initialValues, isEditMode = false }) 
             <FormSection title="Informations générales">
               <Stack space="space.150">
                 <Box>
-                  <Label labelFor={getFieldId('titre')}>Titre de la mission</Label>
+                  <Label labelFor={getFieldId('titre')}>Objet</Label>
                   <Textfield
                     {...register('titre', { required: !isEditMode })}
                     id={getFieldId('titre')}
                     placeholder="Ex : Mission commerciale Paris"
-                    defaultValue={initialValues?.titre || ''}
+                    defaultValue={initialValues?.titre || initialValues?.objet || ''}
                   />
                 </Box>
 
@@ -222,6 +225,7 @@ const MissionForm = ({ onSubmit, onCancel, initialValues, isEditMode = false }) 
               <Button appearance="primary" type="submit">
                 {isEditMode ? 'Enregistrer les modifications' : 'Enregistrer la mission'}
               </Button>
+
               <Button appearance="subtle" onClick={onCancel}>
                 Annuler
               </Button>

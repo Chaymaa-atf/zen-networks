@@ -13,6 +13,7 @@ import { xcss } from '@forge/react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+
 const sectionStyles = xcss({
   borderWidth: 'border.width',
   borderStyle: 'solid',
@@ -46,8 +47,21 @@ const groupRowStyles = xcss({
   backgroundColor: 'color.background.neutral.subtle',
   borderBottomWidth: 'border.width',
   borderBottomStyle: 'solid',
-  borderBottomColor: 'color.border'
+  borderBottomColor: 'color.border',
 });
+
+const tableLineStyles = xcss({
+  width: '100%'
+});
+
+const colMission = xcss({ width: '15%' });
+const colTotal = xcss({ width: '11%' });
+const colEmployee = xcss({ width: '14%' });
+const colType = xcss({ width: '10%' });
+const colDate = xcss({ width: '14%' });
+const colMontant = xcss({ width: '12%' });
+const colDetails = xcss({ width: '14%' });
+const colActions = xcss({ width: '10%' });
 
 const normalizeText = (v) =>
   (v || '').toString().toLowerCase().trim();
@@ -75,7 +89,7 @@ const parseAmountToDH = (item) => {
 
   if (isNaN(amount)) amount = 0;
 
-  const currency = (item.currency || '').toUpperCase();
+  const currency = (item.currency || item.devise || '').toUpperCase();
 
   if (currency.includes('EUR') || currency.includes('€')) {
     amount = amount * 11;
@@ -100,7 +114,6 @@ const DonneesExtraites = ({ missions = [], analyses = [] }) => {
     { label: 'Employé', value: 'employe' },
     { label: 'Type', value: 'type' }
   ]);
-
   const [selectedGroupement, setSelectedGroupement] = useState(null);
   const [openedGroups, setOpenedGroups] = useState({});
 
@@ -164,31 +177,31 @@ const DonneesExtraites = ({ missions = [], analyses = [] }) => {
   ];
 
   const visibleMissions = useMemo(() => {
-  return missions;
-}, [missions]);
+    return missions;
+  }, [missions]);
 
-const enriched = useMemo(() => {
-  return analyses
-    .map(a => {
-      const mission = visibleMissions.find(m =>
-        m.issueKey === a.missionIssueKey ||
-        m.issueKey === a.issueKey ||
-        m.issueKey === a.sourceIssueKey ||
-        m.id === a.missionId
-      );
+  const enriched = useMemo(() => {
+    return analyses
+      .map(a => {
+        const mission = visibleMissions.find(m =>
+          m.issueKey === a.missionIssueKey ||
+          m.issueKey === a.issueKey ||
+          m.issueKey === a.sourceIssueKey ||
+          m.id === a.missionId
+        );
 
-      if (!mission) return null;
+        if (!mission) return null;
 
-      return {
-        ...a,
-        missionKey: mission?.issueKey || mission?.id || '',
-        missionName: mission?.titre || '—',
-        employee:
-          `${mission?.prenomEmploye || ''} ${mission?.nomEmploye || ''}`.trim() || '—'
-      };
-    })
-    .filter(Boolean);
-}, [analyses, visibleMissions]);
+        return {
+          ...a,
+          missionKey: mission?.issueKey || mission?.id || '',
+          missionName: mission?.titre || '—',
+          employee:
+            `${mission?.prenomEmploye || ''} ${mission?.nomEmploye || ''}`.trim() || '—'
+        };
+      })
+      .filter(Boolean);
+  }, [analyses, visibleMissions]);
 
   const filtered = useMemo(() => {
     return enriched.filter(item => {
@@ -295,23 +308,45 @@ const enriched = useMemo(() => {
 
   const renderRow = (item, i) => (
     <Box key={i} xcss={rowStyles}>
-      <Inline spread="space-between">
-        <Text>{item.missionName}</Text>
-        <Text> </Text>
-        <Text>{item.employee}</Text>
-        <Text>{item.category || '—'}</Text>
-        <Text>{item.date || '—'}</Text>
-       <Text>
-        {item.amount
-          ? `${item.amount} ${item.currency || item.devise || 'DH'}`
-          : '—'}
-      </Text>
-        <Text>{item.details || '—'}</Text>
+      <Inline space="space.100" alignBlock="center">
+        <Box xcss={colMission}>
+          <Text>{item.missionName}</Text>
+        </Box>
 
-        <Inline space="space.050">
-          <Button appearance="primary">Modifier</Button>
-          <Button appearance="danger">Supprimer</Button>
-        </Inline>
+        <Box xcss={colTotal}>
+          <Text> </Text>
+        </Box>
+
+        <Box xcss={colEmployee}>
+          <Text>{item.employee}</Text>
+        </Box>
+
+        <Box xcss={colType}>
+          <Text>{item.category || '—'}</Text>
+        </Box>
+
+        <Box xcss={colDate}>
+          <Text>{item.date || '—'}</Text>
+        </Box>
+
+        <Box xcss={colMontant}>
+          <Text>
+            {item.amount
+              ? `${item.amount} ${item.currency || item.devise || 'DH'}`
+              : '—'}
+          </Text>
+        </Box>
+
+        <Box xcss={colDetails}>
+          <Text>{item.details || '—'}</Text>
+        </Box>
+
+        <Box xcss={colActions}>
+          <Inline space="space.050">
+            <Button appearance="primary">Modifier</Button>
+            <Button appearance="danger">Supprimer</Button>
+          </Inline>
+        </Box>
       </Inline>
     </Box>
   );
@@ -327,48 +362,53 @@ const enriched = useMemo(() => {
       return (
         <Box key={key}>
           <Box xcss={groupRowStyles}>
-  <Inline spread="space-between" alignBlock="center">
+            <Inline space="space.100" alignBlock="center" shouldWrap={false}>
+              <Box xcss={colMission}>
+                <Inline space="space.100" alignBlock="center">
+                  <Button
+                    appearance="subtle"
+                    spacing="compact"
+                    onClick={() => toggleGroup(key)}
+                  >
+                    {isOpen ? '▼' : '▶'}
+                  </Button>
 
-    {/* MISSION */}
-    <Inline space="space.100" alignBlock="center">
-      <Button
-        appearance="subtle"
-        spacing="compact"
-        onClick={() => toggleGroup(key)}
-      >
-        {isOpen ? '▼' : '▶'}
-      </Button>
+                  <Text>
+                    {node.label} : {node.name}
+                  </Text>
+                </Inline>
+              </Box>
 
-      <Text>
-        {node.label} : {node.name}
-      </Text>
-    </Inline>
+              <Box xcss={colTotal}>
+                <Text>{node.total.toFixed(2)} DH</Text>
+              </Box>
 
-    {/* TOTAL */}
-    <Text>
-      {node.total.toFixed(2)} DH
-    </Text>
+              <Box xcss={colEmployee}>
+                <Text> </Text>
+              </Box>
 
-    {/* EMPLOYÉ */}
-    <Text> </Text>
+              <Box xcss={colType}>
+                <Text> </Text>
+              </Box>
 
-    {/* TYPE */}
-    <Text> </Text>
+              <Box xcss={colDate}>
+                <Text> </Text>
+              </Box>
 
-    {/* DATE */}
-    <Text> </Text>
+              <Box xcss={colMontant}>
+                <Text> </Text>
+              </Box>
 
-    {/* MONTANT */}
-    <Text> </Text>
+              <Box xcss={colDetails}>
+                <Text> </Text>
+              </Box>
 
-    {/* DÉTAILS */}
-    <Text> </Text>
+              <Box xcss={colActions}>
+                <Text> </Text>
+              </Box>
+            </Inline>
+          </Box>
 
-    {/* ACTIONS */}
-    <Text> </Text>
-
-  </Inline>
-</Box>
           {isOpen && (
             <>
               {isLastLevel
@@ -380,115 +420,73 @@ const enriched = useMemo(() => {
       );
     });
   };
-const generatePdfTable = () => {
-  if (!filtered || filtered.length === 0) {
-    alert('Aucune donnée à générer');
-    return;
-  }
 
-  const doc = new jsPDF('landscape');
-
-  const total = filtered.reduce((sum, item) => {
-    return sum + parseAmountToDH(item);
-  }, 0);
-
-  // ===== TITRE =====
-  doc.setFontSize(18);
-  doc.text('Tableau des données extraites', 14, 15);
-
-  // ===== INFOS =====
-  doc.setFontSize(10);
-
-  doc.text(
-    `Nombre de lignes : ${filtered.length}`,
-    14,
-    25
-  );
-
-  doc.text(
-    `Total général : ${total.toFixed(2)} DH`,
-    14,
-    32
-  );
-
-  // ===== FILTRES =====
-  let filtres = [];
-
-  if (missionFilter && missionFilter.value !== 'all') {
-    filtres.push(`Mission : ${missionFilter.label}`);
-  }
-
-  if (employeeFilter && employeeFilter.value !== 'all') {
-    filtres.push(`Employé : ${employeeFilter.label}`);
-  }
-
-  if (typeFilter && typeFilter.value !== 'all') {
-    filtres.push(`Type : ${typeFilter.label}`);
-  }
-
-  if (monthFilter && monthFilter.value !== 'all') {
-    filtres.push(`Mois : ${monthFilter.label}`);
-  }
-
-  if (dateDebut) {
-    filtres.push(`Du : ${dateDebut}`);
-  }
-
-  if (dateFin) {
-    filtres.push(`Au : ${dateFin}`);
-  }
-
-  if (filtres.length > 0) {
-    doc.text(
-      `Filtres : ${filtres.join(' | ')}`,
-      14,
-      39
-    );
-  }
-
-  // ===== TABLE =====
-  const rows = filtered.map(item => [
-    item.missionName || '—',
-    item.employee || '—',
-    item.category || '—',
-    item.date || '—',
-
-    item.amount
-      ? `${item.amount} ${item.currency || item.devise || 'DH'}`
-      : '—',
-
-    `${parseAmountToDH(item).toFixed(2)} DH`,
-
-    item.details || '—'
-  ]);
-
-  autoTable(doc, {
-    startY: 48,
-
-    head: [[
-      'Mission',
-      'Employé',
-      'Type',
-      'Date',
-      'Montant',
-      'Montant DH',
-      'Détails'
-    ]],
-
-    body: rows,
-
-    styles: {
-      fontSize: 8,
-      cellPadding: 2
-    },
-
-    headStyles: {
-      fillColor: [30, 30, 30]
+  const generatePdfTable = () => {
+    if (!filtered || filtered.length === 0) {
+      alert('Aucune donnée à générer');
+      return;
     }
-  });
 
-  doc.save('donnees-extraites.pdf');
-};
+    const doc = new jsPDF('landscape');
+
+    const total = filtered.reduce((sum, item) => {
+      return sum + parseAmountToDH(item);
+    }, 0);
+
+    doc.setFontSize(18);
+    doc.text('Tableau des frais de mission', 14, 15);
+
+    doc.setFontSize(10);
+    doc.text(
+      `Total général : ${total.toFixed(2)} DH`,
+      14,
+      30
+    );
+
+    if (missionFilter && missionFilter.value !== 'all') {
+      doc.text(
+        `Mission : ${missionFilter.label}`,
+        14,
+        42
+      );
+    }
+
+    const rows = filtered.map(item => [
+      item.missionName || '—',
+      item.employee || '—',
+      item.category || '—',
+      item.date || '—',
+      `${parseAmountToDH(item).toFixed(2)} DH`,
+      item.details || '—'
+    ]);
+
+    autoTable(doc, {
+      startY: 55,
+
+      head: [[
+        'Mission',
+        'Employé',
+        'Type',
+        'Date',
+        'Montant DH',
+        'Détails'
+      ]],
+
+      body: rows,
+
+      styles: {
+        fontSize: 8,
+        cellPadding: 2
+      },
+
+      headStyles: {
+        fillColor: [30, 30, 30]
+      }
+    });
+
+    doc.save('donnees-extraites.pdf');
+  };
+
   return (
     <Stack space="space.400">
       <Heading size="large">
@@ -526,19 +524,17 @@ const generatePdfTable = () => {
           />
 
           <Inline space="space.100">
+            <Button appearance="primary">
+              Filtrer
+            </Button>
 
-          <Button appearance="primary">
-            Filtrer
-          </Button>
-
-          <Button
-            appearance="warning"
-            onClick={generatePdfTable}
-          >
-            Générer PDF
-          </Button>
-
-        </Inline>
+            <Button
+              appearance="warning"
+              onClick={generatePdfTable}
+            >
+              Générer PDF
+            </Button>
+          </Inline>
 
           <Button
             appearance="subtle"
@@ -656,17 +652,40 @@ const generatePdfTable = () => {
       ) : (
         <Box xcss={tableStyles}>
           <Box xcss={headerStyles}>
-            <Inline spread="space-between">
-              <Text>MISSION</Text>
-              <Text>TOTAL</Text>
-              <Text>EMPLOYÉ</Text>
-              <Text>TYPE</Text>
-              <Text>DATE</Text>
-              <Text>MONTANT</Text>
-              <Text>DÉTAILS</Text>
-              <Text>ACTIONS</Text>
-            </Inline>
-          </Box>
+  <Inline space="space.100" alignBlock="center">
+    <Box xcss={colMission}>
+      <Text>MISSION</Text>
+    </Box>
+
+    <Box xcss={colTotal}>
+      <Text>TOTAL</Text>
+    </Box>
+
+    <Box xcss={colEmployee}>
+      <Text>EMPLOYÉ</Text>
+    </Box>
+
+    <Box xcss={colType}>
+      <Text>TYPE</Text>
+    </Box>
+
+    <Box xcss={colDate}>
+      <Text>DATE</Text>
+    </Box>
+
+    <Box xcss={colMontant}>
+      <Text>MONTANT</Text>
+    </Box>
+
+    <Box xcss={colDetails}>
+      <Text>DÉTAILS</Text>
+    </Box>
+
+    <Box xcss={colActions}>
+      <Text>ACTIONS</Text>
+    </Box>
+  </Inline>
+</Box>
 
           {groupedTree
             ? renderTree(groupedTree)

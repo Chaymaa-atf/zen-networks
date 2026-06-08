@@ -20,7 +20,7 @@ import {
   getAppConfig,
   getStatsData,
   getMissionAttachmentAnalyses,
-  updateMissionStatus
+  updateMissionStatus,
 } from './services/missionService';
 
 const App = () => {
@@ -42,7 +42,6 @@ const App = () => {
 
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState('employe');
-
   const [resultMessage, setResultMessage] = useState('');
   const [isError, setIsError] = useState(false);
 
@@ -177,6 +176,7 @@ const App = () => {
         }
 
         setCurrentUser(user);
+        await loadUsers();
         await loadMissions(user.accountId);
       } catch (error) {
         setIsError(true);
@@ -319,7 +319,22 @@ const App = () => {
     setResultMessage('');
     setIsError(false);
   };
+const loadUsers = async () => {
 
+  try {
+
+    const response = await getJiraUsers();
+
+    if (response?.success) {
+      setJiraUsers(response.users || []);
+    }
+
+  } catch (error) {
+
+    console.error('Erreur chargement users Jira:', error);
+
+  }
+};
   if (checkingConfig) return <Text>Chargement de la configuration...</Text>;
 
   if (!appConfig) return <AppConfiguration onConfigured={handleConfigured} />;
@@ -358,12 +373,13 @@ const App = () => {
 
         {currentPage === 'missions' && showForm && (
           <MissionForm
-            key={isEditMode ? selectedMission?.id || 'edit' : 'create'}
-            onSubmit={handleCreateOrUpdateMission}
-            onCancel={handleBackToList}
-            initialValues={selectedMission}
-            isEditMode={isEditMode}
-          />
+        key={isEditMode ? selectedMission?.id || 'edit' : 'create'}
+        onSubmit={handleCreateOrUpdateMission}
+        onCancel={handleBackToList}
+        initialValues={selectedMission}
+        isEditMode={isEditMode}
+       
+      />
         )}
 
         {currentPage === 'missions' && showOrdreForm && selectedMission && (
